@@ -1,0 +1,25 @@
+Metadata-Version: 2.1
+Name: jolib
+Version: 0.0.1
+Summary: My first Python library
+Home-page: UNKNOWN
+Author: Johannes Allwang
+Author-email: johannes@it-allwang.de
+License: MIT
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
+# Code Documentation
+
+## instrument classes and sql database
+
+## model clases
+
+## Other
+
+
