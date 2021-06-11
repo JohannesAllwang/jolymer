@@ -27,6 +27,11 @@ def n_subplots(n, subplot_size=(5, 4)):
     return fig, axes
 
 class data_linewidth_plot():
+
+    """ 
+    this class is copy pasted from stack overflow
+
+    """
     def __init__(self, x, y, **kwargs):
         self.ax = kwargs.pop("ax", plt.gca())
         self.fig = self.ax.get_figure()

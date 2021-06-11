@@ -18,6 +18,23 @@ from .. import os_utility as osu
 from .SAXS_Measurement import SAXS_Measurement
 
 class Desy(SAXS_Measurement):
+
+    @classmethod
+    def setup(cls, values):
+        """
+        This method inserts the measurement into the database and creates the desired folderstructure.
+        """
+        dbo.insert_values('desy_measurements', values)
+        did = values[0]
+        m = cls.__init__(did, issetup=False, count=False)
+        osu.create_path(os.path.join(self.path,'buffer'))
+        osu.create_path(m.frames_path)
+        osu.create_path(m.absolute_path)
+        osu.create_path(m.averaged_path)
+        osu.create_path(m.buffer_frames_path)
+        osu.create_path(m.buffer_absolute_path)
+        unsorted_path = os.path.join(self.rawdatapath, f'desy{m.datestring}')
+        osu.create_path(unsorted_path)
     
     def __init__(self, desy_id, issetup=True, cout=True, **kwargs):
         with dbo.dbopen() as c:
@@ -48,14 +65,7 @@ class Desy(SAXS_Measurement):
                     except:
                         pass
                     self.infodict[key] = info
-        else:
-            osu.create_path(os.path.join(self.path,'buffer'))
-            osu.create_path(self.frames_path)
-            osu.create_path(self.absolute_path)
-            osu.create_path(self.averaged_path)
-            osu.create_path(self.buffer_frames_path)
-            osu.create_path(self.buffer_absolute_path)
-    
+
     def get_frame_dfs(self, buffer=False):
         out=[]
         path=self.frames_path
@@ -90,13 +100,13 @@ class Desy(SAXS_Measurement):
         if cout:
             print(f'{len_before-len_after} negative I values!')
         # df = df[df.I>df.err_I]
-        df = df[df.q<7.]
+        # df = df[df.q<7.]
         len_after = len(df)
         if cout:
             print(f'{len_before-len_after} excluded I values!')
         return df
     
-    def plot_data(self, label = None, scale = 1, **kwargs):
+    def plot_data(self, label=None, scale=1, **kwargs):
         "plots data"
         df = self.get_data()
         if 'figure' in kwargs:
