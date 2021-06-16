@@ -21,7 +21,7 @@ from .. import os_utility as osu
 
 from matplotlib.backends.backend_pdf import PdfPages
 
-plt.style.use('seaborn')
+# plt.style.use('seaborn')
 
 # Here come some functions used to generate labels:
 
@@ -127,7 +127,10 @@ def dist_seq(m,fit,seq_numbers, xspace='t'):
 def dist_phi(m, fit, seq_numbers, xspace='t'):
     fig, (axf, axd) = plt.subplots(nrows=2, figsize=(10,10))
     axd = _dist_compilation(m, fit, seq_numbers, 'viridis', philabel, None, ax=axd, xspace=xspace)
+    axd.set_ylabel('$\\tau A(\\tau)$ [s]')
+    axd.set_xlabel('$\\tau$ [s]')
     axf =  _fit_compilation(m, fit, seq_numbers, 'viridis', philabel, None, ax=axf)
+    axf.set_ylabel('$g_2 - 1$')
     return fig, (axf, axd)
 
 def rh_seq(*args, **kwargs):
@@ -149,10 +152,10 @@ def _raw_contin_page(m, fit, phi, per_plot=5, **kwargs):
         
     fig, ((axf1, axf2), (axd1, axd2)) = plt.subplots(nrows=2, ncols=2, figsize=(12, 8))
     axd1 = _dist_compilation(m, fit, m.phirange(phi)[0:5], 'viridis', seqlabel, None,ax=axd1)
-    axd1.set_xlabel('$\\tau $ [ms]')
-    axd1.set_ylabel('$\\tau \\cdot G(\\tau) $ [ms]')
+    axd1.set_xlabel('$\\tau $ [s]')
+    axd1.set_ylabel('$\\tau \\cdot G(\\tau) $ [s]')
     axd2 = _dist_compilation(m, fit, m.phirange(phi)[5::], 'viridis', seqlabel, None,ax=axd2)
-    axd2.set_xlabel('$\\tau $ [ms]')
+    axd2.set_xlabel('$\\tau $ [s]')
     axf1 =  _fit_compilation(m, fit, m.phirange(phi)[0:5], 'viridis', seqlabel, None ,ax=axf1)
     axf1.set_ylabel('$g_2 - 1$')
     axf2 =  _fit_compilation(m, fit, m.phirange(phi)[5::], 'viridis', seqlabel, None ,ax=axf2)
@@ -160,8 +163,10 @@ def _raw_contin_page(m, fit, phi, per_plot=5, **kwargs):
     fig.suptitle(f'$2\\Theta = $ {phi} $^\\circ$ \t $T = $ {m.TC} $^\circ$C')
     plt.tight_layout()   
 def contin_pdf(m, fit):
-    filename = os.path.join(m.path, f'contin_{m.script_row}_T{m.TC}.pdf')
-    filename = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\figures\\contin_pdf\\{m.instrument}{m.id}T{int(round(m.TC))}_{m.script_row}.pdf"
+    # filename = os.path.join(m.path, f'contin_{m.script_row}_T{m.TC}.pdf')
+    # filename = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\figures\\contin_pdf\\{m.instrument}{m.id}T{int(round(m.TC))}_{m.script_row}.pdf"
+    osu.create_path(m.figures_path)
+    filename = os.path.join(m.figures_path, f'{m.instrument}_{m.id}_{fit.name}_{m.script_row}_T{m.TC}.pdf')
     with PdfPages(filename) as pdf:
         for phi in m.angles:
             print(phi)
@@ -171,14 +176,18 @@ def contin_pdf(m, fit):
 
 def _qplot_mfitlist(mfitlist, parameter, figure=None, **kwargs):
     num_plots = len(mfitlist)
-    if figure==None:
+    if figure == None:
         fig, axes = plu.n_subplots(num_plots)
     else:
         fig, axes = figure
-    axlist=axes.flatten()
-    for args, ax in zip(mfitlist, axlist):
-        m, fit = args
+    axlist = axes.flatten()
+    for fitm, ax in zip(mfitlist, axlist):
+        m, fit = fitm
         ax = m.qplot(fit, [parameter], ax=ax, **kwargs)
+
+# def qplot_dapp(mlist, )
+
+# def plot_Dapp(m, fit, )
   
 def compare_prob_rej(self, c, meas_num, method = 'one5'):
     ""

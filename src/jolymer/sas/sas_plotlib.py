@@ -49,3 +49,10 @@ def kratky_plot():
 
 def guinier_plot():
     pass
+
+def _compilation(m, fixed_pars, label_pars, fit, cm, labelfunc, title, ax=None, **kwargs):
+    query = f"""
+    select id from desy_measurements where
+    """
+    for fixp in fixed pars:
+        query += f"{fixp}"

@@ -169,7 +169,7 @@ def cu2_create_bounds(measurement, phi):
     return ((Dmin, D2min, betamin), (Dmax, D2max, betamax))
 
 cu2_pardict = {
-    'Dapp': ["$D_{app}$ $\\mathrm{[\\mu m^2/s}]$"],
+    'Dapp': ["$D_{app}$ $\\mathrm{[m^2/s}]$"],
     'varDapp' : ['var$(D_{app})$'],
     'beta': ['$\\beta$']
     }

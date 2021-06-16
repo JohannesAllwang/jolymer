@@ -24,23 +24,23 @@ class Desy(SAXS_Measurement):
         """
         This method inserts the measurement into the database and creates the desired folderstructure.
         """
-        dbo.insert_values('desy_measurements', values)
+        # dbo.insert_values('desy_measurements', values)
         did = values[0]
-        m = cls.__init__(did, issetup=False, count=False)
-        osu.create_path(os.path.join(self.path,'buffer'))
+        m = cls.__init__(m, did, issetup=False, count=False)
+        osu.create_path(os.path.join(m.path,'buffer'))
         osu.create_path(m.frames_path)
         osu.create_path(m.absolute_path)
         osu.create_path(m.averaged_path)
         osu.create_path(m.buffer_frames_path)
         osu.create_path(m.buffer_absolute_path)
-        unsorted_path = os.path.join(self.rawdatapath, f'desy{m.datestring}')
+        unsorted_path = os.path.join(m.rawdatapath, f'desy{m.datestring}')
         osu.create_path(unsorted_path)
     
-    def __init__(self, desy_id, issetup=True, cout=True, **kwargs):
+    def __init__(self, desy_id, issetup=False, cout=True, **kwargs):
         with dbo.dbopen() as c:
             c.execute("SELECT * FROM desy_measurements WHERE id=?;", (desy_id,))
             self.id, self.datestring, self.given_name, self.samplestring, _,\
-                self.comment = list(c.fetchone())
+                self.comment, self.timestring = list(c.fetchone())
         if cout:
             print(self.samplestring)
         if self.samplestring == None:
@@ -66,10 +66,23 @@ class Desy(SAXS_Measurement):
                         pass
                     self.infodict[key] = info
 
-    def get_frame_dfs(self, buffer=False):
+    def get_parameter(self, parstring):
+        pass
+        
+
+    def get_TC(self):
+        """
+        gets the temperature in Celsius from the processed_subtracted file.
+        """
+        with open(self.get_filename) as f:
+            for line in f:
+                if line.split(':')[0] == 'databsolute-temperature':
+                    pass
+
+    def get_frame_dfs(self, buf=False):
         out=[]
         path=self.frames_path
-        if buffer:
+        if buf:
             path = self.buffer_frames_path
         for file in os.listdir(path):
             df = pd.read_csv(os.path.join(path, file), skiprows=2, header=None, names=['q', 'I', 'err_I'],
@@ -89,11 +102,16 @@ class Desy(SAXS_Measurement):
             out.append(df)
         return out, files
 
+    def get_filename(self):
+        return os.path.join(self.path, 'processed_subtracted.dat')
         
     def get_data(self, cout=True):
         "get data from data.csv and apply some filter."
-        path = os.path.join(self.path, 'data.csv')
-        df = pd.read_csv(path)
+        # path = os.path.join(self.path, 'data.csv')
+        path = self.get_filename()
+        df = pd.read_csv(path, sep='  ', header=None, skiprows=3, nrows=2653, names=['q', 'I', 'err_I'])
+        # df = pd.read_csv(filename, sep='\t', skiprows=16+xmin, nrows=xmax-xmin,
+        #                  header=None, names=['t', 'g2'], engine='python')
         len_before = len(df)
         # df = df[df.I>0]
         len_after = len(df)

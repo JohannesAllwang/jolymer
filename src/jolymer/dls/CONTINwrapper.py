@@ -71,7 +71,7 @@ def continfit(measurement, seq_number, Ngrid=256, tmin=-2, bgr=0, distribution='
     typ = -1 # g2-1
     l = 632.  # in nm
     T = measurement.get_TK()
-    n = measurement.sample.buffer.get_n(T)
+    n = measurement.sample.buffer.get_n(T, measurement.get_wl())
     if n == None:
         n = 1.333   
         print('Using n = 1.333 from water at 25 degC')
