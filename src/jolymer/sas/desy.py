@@ -49,35 +49,25 @@ class Desy(SAXS_Measurement):
             sample_type, sample_id = self.samplestring.split('_')
             self.sample = Sample.get_sample(sample_type, sample_id)
         self.path = os.path.join(self.rawdatapath, 'desy{0:03}/'.format(self.id))
+        self.processed_subtracted_file = os.path.join(self.path, 'processed_subtracted.dat')
+        self.processed_file = os.path.join(self.path, 'processed.dat')
         self.frames_path = os.path.join(self.path, 'frames')
         self.absolute_path = os.path.join(self.path, 'absolute')
         self.averaged_path = os.path.join(self.path, 'averaged')
         self.buffer_frames_path = os.path.join(self.path,'buffer', 'frames')
         self.buffer_absolute_path = os.path.join(self.path,'buffer', 'absolute')
-        self.infodict = {}
-        if issetup:
-            with open(self.path + 'infodict.txt') as file:
-                for line in file:
-                    key, info = line.split(':')
-                    info = info.split('\n')[0]
-                    try:
-                        info = float(info)
-                    except:
-                        pass
-                    self.infodict[key] = info
 
     def get_parameter(self, parstring):
-        pass
-        
+        with open(self.get_filename()) as f:
+            for line in f:
+                if line.split(':')[0] == parstring:
+                    return line.split(':')[1] 
 
     def get_TC(self):
         """
         gets the temperature in Celsius from the processed_subtracted file.
         """
-        with open(self.get_filename) as f:
-            for line in f:
-                if line.split(':')[0] == 'databsolute-temperature':
-                    pass
+        return get_parameter('SC Target Temperature')
 
     def get_frame_dfs(self, buf=False):
         out=[]
@@ -90,10 +80,10 @@ class Desy(SAXS_Measurement):
             out.append(df)
         return out
     
-    def get_absolute_dfs(self, buffer=False):
+    def get_absolute_dfs(self, buf=False):
         out=[]
         path=self.absolute_path
-        if buffer:
+        if buf:
             path = self.buffer_absolute_path
         files = os.listdir(path)
         for file in files:
@@ -101,6 +91,16 @@ class Desy(SAXS_Measurement):
                      delimiter='   ', nrows = 2652)
             out.append(df)
         return out, files
+
+    def get_averaged(self, buf=False):
+        path=self.averaged_path
+        files = os.listdir(path)
+        sorb = 'buffer' if buf else 'sample'
+        for fil in files:
+            if len(fil.split(sorb)) >1:
+                df = pd.read_csv(os.path.join(path, fil), skiprows=3, header=None, names=['q', 'I', 'err_I'],
+                     delimiter='   ', nrows = 2652)
+        return df
 
     def get_filename(self):
         return os.path.join(self.path, 'processed_subtracted.dat')
@@ -130,6 +130,9 @@ class Desy(SAXS_Measurement):
         if 'figure' in kwargs:
             fig, ax = kwargs['figure']
             kwargs.pop('figure')
+        if 'ax' in kwargs:
+            ax = kwargs['ax']
+            kwargs.pop('ax')
         else:
             fig, ax = plt.subplots()
             ax.set_xlabel('$q$ [1/nm]')
@@ -154,5 +157,5 @@ class Desy(SAXS_Measurement):
         
         ax.set_xscale('log')
         ax.set_yscale('log')
-        return fig, ax
+        return ax
     
