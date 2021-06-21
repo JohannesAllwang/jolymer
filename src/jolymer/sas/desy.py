@@ -76,7 +76,7 @@ class Desy(SAXS_Measurement):
             path = self.buffer_frames_path
         for file in os.listdir(path):
             df = pd.read_csv(os.path.join(path, file), skiprows=2, header=None, names=['q', 'I', 'err_I'],
-                     delimiter='   ', nrows = 2652)
+                     delimiter='\s+', nrows = 2652)
             out.append(df)
         return out
     
@@ -88,7 +88,7 @@ class Desy(SAXS_Measurement):
         files = os.listdir(path)
         for file in files:
             df = pd.read_csv(os.path.join(path, file), skiprows=2, header=None, names=['q', 'I', 'err_I'],
-                     delimiter='   ', nrows = 2652)
+                     delimiter='\s+', nrows = 2652)
             out.append(df)
         return out, files
 
@@ -99,7 +99,7 @@ class Desy(SAXS_Measurement):
         for fil in files:
             if len(fil.split(sorb)) >1:
                 df = pd.read_csv(os.path.join(path, fil), skiprows=3, header=None, names=['q', 'I', 'err_I'],
-                     delimiter='   ', nrows = 2652)
+                     delimiter='\s+', nrows = 2652)
         return df
 
     def get_filename(self):
@@ -109,7 +109,7 @@ class Desy(SAXS_Measurement):
         "get data from data.csv and apply some filter."
         # path = os.path.join(self.path, 'data.csv')
         path = self.get_filename()
-        df = pd.read_csv(path, sep='  ', header=None, skiprows=3, nrows=2653, names=['q', 'I', 'err_I'])
+        df = pd.read_csv(path, sep='\s+', header=None, skiprows=3, nrows=2653, names=['q', 'I', 'err_I'])
         # df = pd.read_csv(filename, sep='\t', skiprows=16+xmin, nrows=xmax-xmin,
         #                  header=None, names=['t', 'g2'], engine='python')
         len_before = len(df)
@@ -124,9 +124,11 @@ class Desy(SAXS_Measurement):
             print(f'{len_before-len_after} excluded I values!')
         return df
     
-    def plot_data(self, label=None, scale=1, **kwargs):
+    def plot_data(self, label=None, scale=1, buf=False, **kwargs):
         "plots data"
         df = self.get_data()
+        if buf==True:
+            df = self.get_averaged(buf=True)
         if 'figure' in kwargs:
             fig, ax = kwargs['figure']
             kwargs.pop('figure')
