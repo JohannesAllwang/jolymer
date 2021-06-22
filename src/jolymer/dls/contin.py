@@ -175,12 +175,13 @@ class Contin(Cun):
             # Add all the peaks to the peaks dictionary:
             for frmto in peak_fromtos:
                 peaks_dict['seq_number'].append(seq_number)
-                peaks_dict['fromto'].append(frmto)
+                peaks_dict['from'].append(frmto[0])
+                peaks_dict['to'].append(frmto[1])
             # Append parameters to parlist for later averaging:
-            par_list.append([Dapp] + fit_quality)
+            par_list.append([Dapp] + [float(fq) for fq in fit_quality])
         dict_avg ={'phi' : phi,
                    'qq' : qq}
-        for index, parameter in enumerate(self.parameters):
+        for index, parameter in enumerate(self.parameters[1::]):
             dict_avg[parameter] = np.mean([x[index] for x in par_list])
             dict_avg['err_' + parameter] = np.std([x[index] for x in par_list])
         df_avg = df_avg.append(dict_avg, ignore_index=True)
@@ -200,15 +201,14 @@ class Contin(Cun):
     
     def analyse(self, m):
         osu.create_path(m.get_fitpath(self))
-        df_avg = pd.DataFrame(columns = ["qq", "Dgeo", "Dar", 'Dhar'])
-        df_par = pd.DataFrame(columns = ["seq_number", "D", "std_D"])
+        df_avg = pd.DataFrame(columns = parameters)
+        df_par = pd.DataFrame(columns = parameters)
         peaks_dict = {'seq_number' : [],
-                'fromto' :[]}
+                      'from' : [],
+                      'to' : []}
         for phi in m.angles:
             df_avg, df_par, peaks_dict = self.analyse_phi(m, df_avg, df_par, peaks_dict, phi)
         df_peaks = pd.DataFrame(peaks_dict)
-        print('For bugfixing:')
-        return df_peaks, df_avg
         with dbo.dbopen() as c:
             conn = c.connection
             df_avg.to_sql(self.phis_tablename(m), conn, if_exists='replace')
@@ -229,6 +229,5 @@ class Contin(Cun):
 
 
 parameters = []
-# parameters = "qq", "Dgeo", "Dar", 'Dhar',\
-#      'alpha', 'alpha_by_s', 'obj_fctn', 'variance', 'std_dev', 'deg_freedon', 'probreg1', 'probreg2',\
+parameters = ["qq", "Dapp", 'alpha', 'alpha_by_s', 'obj_fctn', 'variance', 'std_dev', 'deg_freedom', 'probrej1', 'probrej2']
 contin = Contin('contin', parameters, None)
