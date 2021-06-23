@@ -95,6 +95,19 @@ class Cun:
     def seqs_tablename(self, measurement):
         out = f"seqs_{self.name}_{measurement.id}"
         return out
+
+    def get_R(self, m):
+        df = self.get_phitable(m)
+        D = df.loc[df.phi=='y_intercept'].Dapp
+        err_D = df.loc[df.phi=='y_intercept'].err_Dapp
+        R = float(m.RfromD(D))
+        err_R = float(R * err_D / D)
+        return R, err_R
+
+    def str_R(self, m):
+        R, err_R = self.get_R(m)
+        # return '{0:.2f} ± {1:.2f} nm'.format(R * 1e9, err_R * 1e9)
+        return '{0:.2f} $\\pm$ {1:.2f} nm'.format(R * 1e9, err_R * 1e9)
     
     def analyse(self, measurement):
         df_avg = pd.DataFrame(columns = self.phi_columns)
@@ -115,7 +128,8 @@ class Cun:
                 popt, pcov = optimize.curve_fit(func, df_avg.qq, df_avg[par],
                                     sigma=df_avg[f'err_{par}'], bounds=(-np.inf ,np.inf))
                 pstd = np.sqrt(np.diag(pcov))
-            except:
+            except Exception as e:
+                print(e)
                 pstd = [None]
             constant = popt[0]
             err_constant = pstd[0]
@@ -129,7 +143,8 @@ class Cun:
                                     sigma=df_avg[f'err_{par}'], 
                                     bounds=((-np.inf,-np.inf), (np.inf, np.inf)))
                 pstd = np.sqrt(np.diag(pcov))
-            except:
+            except Exception as e:
+                print(e)
                 popt, pcov = [[None, None], [None, None]]
                 pstd = [None, None]
             yintercept, slope = popt
@@ -166,6 +181,8 @@ def cu2_create_bounds(measurement, phi):
     betamax = 1.2
     if measurement.mode == '3dcross':
         betamax=0.3
+    if measurement.mode == 'mod3d':
+        betamax=0.9
     return ((Dmin, D2min, betamin), (Dmax, D2max, betamax))
 
 cu2_pardict = {

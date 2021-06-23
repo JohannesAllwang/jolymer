@@ -130,8 +130,10 @@ class lsi(Measurement):
         return dbo.get_table('{self.instrument}_exceptions')
 
     def get_data(self, seq_number, xmin=15, xmax=221):
+        if self.mode=='mod3d':
+            xmax=170
         filename = self.rawdata_filename(seq_number)
-        df = pd.read_csv(filename, sep='\t', skiprows=16+xmin, nrows=xmax-xmin,
+        df = pd.read_csv(filename, sep='\s+', skiprows=16+xmin, nrows=xmax-xmin,
                          header=None, names=['t', 'g2'], engine='python')
         return df
 
@@ -209,6 +211,9 @@ class lsi(Measurement):
     def qq(self, phi):
         "calculates the square of scattering vector q^2[m^-2] from the scattering angle 2\Theta."
         return self.q(phi)**2
+
+    def get_visc(self):
+        return self.sample.get_viscosity(self.get_TK())
     
     def plot_data(self, seq_number, ax=None, **kwargs):
         if ax==None:
@@ -227,6 +232,8 @@ class lsi(Measurement):
         ax.set_ylim(0,1)
         if self.mode == '3dcross':
             ax.set_ylim(0, 0.25)
+        if self.mode == 'mod3d':
+            ax.set_ylim(0, 0.85)
         return ax
     
     def plot_fit(self, seq_number, fit, fitcolor='lightsalmon', ax = None, **kwargs):

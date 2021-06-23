@@ -174,6 +174,40 @@ def contin_pdf(m, fit):
             pdf.savefig()
             plt.close()
 
+def get_full_df(m, fit, par):
+    df = fit.get_phitable(m)
+    if par == 'Gamma':
+        df['Gamma'] = df.qq * df.Dapp
+        constant_fit = [0, df.loc[df.phi=='constant'].Dapp * max(df.qq)]
+        y_intercept = float(df.loc[df.phi=='y_intercept'][par])
+        slope = float(df.loc[df.phi=='slope'][par])
+        linear_fit = [0, max(df.qq) * (y_intercept + max(df.qq)*slope)]
+    else:
+        constant_fit = [df.loc[df.phi=='constant'][par] for x in [1,1]]
+        y_intercept = float(df.loc[df.phi=='y_intercept'][par])
+        slope = float(df.loc[df.phi=='slope'][par])
+        linear_fit =[y_intercept, y_intercept + max(df.qq)*slope] 
+    return df, constant_fit, linear_fit
+
+def qplot(m, fit, par, ax=None, plot_constant=False, plot_linear=False, **kwargs):
+    df, constant_fit, linear_fit = get_full_df(m, fit, par)
+    dfp = df[df.qq>0]
+    if ax==None:
+        fig, ax = plt.subplots()
+    if 'xlabel' in kwargs:
+        ax.set_xlabel(kwargs.pop('xlabel'))
+    if 'ylabel' in kwargs:
+        ax.set_ylabel(kwargs.pop('ylabel'))
+    if 'title' in kwargs:
+        ax.set_title(kwargs.pop('title'))
+    ax.errorbar(dfp.qq, dfp[par], dfp[f'err_{par}'], fmt='o', **kwargs)
+    if plot_constant:
+        ax.errorbar([0, max(dfp.qq)], constant_fit, fmt='-', **kwargs)
+    if plot_linear:
+        # print(linear_fit)
+        ax.errorbar([0, max(dfp.qq)], linear_fit, fmt='-', **kwargs)
+    return df, ax
+
 def _qplot_mfitlist(mfitlist, parameter, figure=None, **kwargs):
     num_plots = len(mfitlist)
     if figure == None:
@@ -187,7 +221,8 @@ def _qplot_mfitlist(mfitlist, parameter, figure=None, **kwargs):
 
 # def qplot_dapp(mlist, )
 
-# def plot_Dapp(m, fit, )
+def plot_Dapp(m, fit, **kwargs):
+    pass
   
 def compare_prob_rej(self, c, meas_num, method = 'one5'):
     ""

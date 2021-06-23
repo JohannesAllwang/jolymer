@@ -8,15 +8,16 @@ Created on Fri Oct 23 08:10:31 2020
 
 
 # import jscatter as js
+from .cun import Cun
 from . import lsi
+from .. import database_operations as dbo
+from .. import os_utility as osu
+from . import CONTINwrapper
+
 import numpy as np
 import pandas as pd
 import os
-from .cun import Cun
-from .. import database_operations as dbo
-from .. import os_utility as osu
-
-from . import CONTINwrapper
+from scipy import optimize
 
 class _peak:
 
@@ -165,8 +166,8 @@ class Contin(Cun):
             alpha, alpha_by_s, obj_fctn, variance, std_dev, deg_freedon, probreg1, probreg2= \
                     fit_quality
             # Now we need to calculate some parameters:
-            m1 = np.sum(dfd.dist * dfd.t)
-            Dapp = qq * m1
+            mean_tau = np.sum(dfd.dist * dfd.t)
+            Dapp = 1 / (qq * mean_tau)
             # Create a parameter dict to append to the df_par dataframe:
             dict_par = {'seq_number' : seq_number}
             for value, parameter in zip([qq, Dapp] + fit_quality, self.parameters):
@@ -209,6 +210,43 @@ class Contin(Cun):
         for phi in m.angles:
             df_avg, df_par, peaks_dict = self.analyse_phi(m, df_avg, df_par, peaks_dict, phi)
         df_peaks = pd.DataFrame(peaks_dict)
+        dict_avg ={'phi' : ['constant', 'y_intercept', 'slope'],
+                   'qq' : [-1, -1, -1]}
+        for index, par in enumerate(self.parameters[1::]):
+            # Constant fit:
+            def func(qq, Davg):
+                return Davg * np.ones(len(qq))
+            popt, pcov = [[None], [None]]
+            try:
+                popt, pcov = optimize.curve_fit(func, df_avg.qq, df_avg[par],
+                                    sigma=df_avg[f'err_{par}'], bounds=(-np.inf ,np.inf))
+                pstd = np.sqrt(np.diag(pcov))
+            except Exception as e:
+                print(e)
+                pstd = [None]
+            constant = popt[0]
+            err_constant = pstd[0]
+            
+            # Linear fit:
+            def func(qq, D0, D0chrg2):
+                out = D0*np.ones(len(qq)) + D0chrg2*qq
+                return out
+            try:
+                popt, pcov = optimize.curve_fit(func, df_avg.qq, df_avg[par],
+                                    sigma=df_avg[f'err_{par}'], 
+                                    bounds=((-np.inf,-np.inf), (np.inf, np.inf)))
+                pstd = np.sqrt(np.diag(pcov))
+            except Exception as e:
+                print(e)
+                popt, pcov = [[None, None], [None, None]]
+                pstd = [None, None]
+            yintercept, slope = popt
+            err_yintercept, err_slope = pstd
+            
+            dict_avg[par] = [constant, yintercept, slope]
+            dict_avg['err_'+par] = [err_constant, err_yintercept, err_slope]
+        ap = pd.DataFrame(dict_avg)
+        df_avg = df_avg.append(ap, ignore_index=True)
         with dbo.dbopen() as c:
             conn = c.connection
             df_avg.to_sql(self.phis_tablename(m), conn, if_exists='replace')
