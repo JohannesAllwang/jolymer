@@ -275,7 +275,7 @@ def continfit(measurement, seq_number, Ngrid=256, tmin=-2, bgr=0, distribution='
 
         contin_cwd = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\packaging\\src\\jolymer\\dls"
         p = subprocess.Popen(['powershell', './contin-windows.exe'],  shell=True,
-                              cwd=contin_cwd,
+                              cwd=contin_cWd,
                               bufsize=0,
                               stdin=subprocess.PIPE,
                               stdout=subprocess.PIPE,

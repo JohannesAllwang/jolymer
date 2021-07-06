@@ -58,26 +58,36 @@ def guinier_plot():
 #         query += f"{fixp}"
 
 def absolutes(m):
-    fig, axes = plt.subplots(nrows=3, figsize=(8,10))
+    # fig, axes = plt.subplots(nrows=3, figsize=(8,10))
+    fig, axes = plt.subplots(nrows=2, figsize=(8,10))
     for ax in axes:
         ax.set_yscale('log')
         ax.set_xscale('log')
-    axsub, axsam, axbuf = axes
+    # axsub, axsam, axbuf = axes
+    axsub, axsam = axes
     m.plot_data(ax=axsub, label=m.get_parameter('parent'))
     # axsub.legend()
     axsub.set_title(m.get_parameter('parent'))
 
     absdfs = m.get_absolute_dfs()[0]
-    for absdf, color in zip(absdfs, plu.cm_for_l('viridis', absdfs)):
-        axsam.errorbar(absdf.q, absdf.I, yerr=absdf.err_I, color=color)
+    label = 'sample'
+    for absdf, color in zip(absdfs, plu.cm_for_l('winter', absdfs)):
+        axsam.errorbar(absdf.q, absdf.I, yerr=absdf.err_I, color=color, label=label)
+        label = None
     avgdf = m.get_averaged()
     axsam.errorbar(avgdf.q, avgdf.I, yerr=avgdf.err_I, color='r', label='average')
     axsam.set_title('sample absolutes')
     axsam.legend()
+    axsam.set_xlabel('$q\\,[\mathrm{nm^{-2}}]$')
+    axsam.set_ylabel('$I\\,[\mathrm{cm^{-1}}]$')
+
+    axbuf = axsam
 
     b_absdfs = m.get_absolute_dfs(buf=True)[0]
-    for b_absdf, color in zip(b_absdfs, plu.cm_for_l('viridis', b_absdfs)):
-        axbuf.errorbar(b_absdf.q, b_absdf.I, yerr=b_absdf.err_I, color=color)
+    label = 'buffer'
+    for b_absdf, color in zip(b_absdfs, plu.cm_for_l('Wistia', b_absdfs)):
+        axbuf.errorbar(b_absdf.q, b_absdf.I, yerr=b_absdf.err_I, color=color, label=label)
+        label = None
     b_avgdf = m.get_averaged(buf=True)
     axbuf.errorbar(b_avgdf.q, b_avgdf.I, yerr=b_avgdf.err_I, color='r', label='average')
     axbuf.set_title('buffer absolutes')
