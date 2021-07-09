@@ -160,4 +160,39 @@ class Desy(SAXS_Measurement):
         ax.set_xscale('log')
         ax.set_yscale('log')
         return ax
-    
+
+    def plot_kratky(self, label=None, scale=1, buf=False, **kwargs):
+        "plots kratky"
+        df = self.get_data()
+        df = df[df.q<2]
+        if buf==True:
+            df = self.get_averaged(buf=True)
+        if 'figure' in kwargs:
+            fig, ax = kwargs['figure']
+            kwargs.pop('figure')
+        if 'ax' in kwargs:
+            ax = kwargs['ax']
+            kwargs.pop('ax')
+        else:
+            fig, ax = plt.subplots()
+            ax.set_xlabel('$q$ [1/nm]')
+            ax.set_ylabel('$q^2I$')
+        if 'shift' in kwargs:
+            scale = kwargs['shift']
+            kwargs.pop('shift')
+        if 'marker' in kwargs:
+            marker=kwargs['marker']
+            kwargs.pop('marker')
+        else:
+            marker='.'
+        if 'linestyle' in kwargs:
+            linestyle=kwargs['linestyle']
+            kwargs.pop('linestyle')
+        else:
+            linestyle=''
+
+        xdata = df.q
+        ydata = df.q * df.q * df.I
+        erry = ydata * df.err_I/df.I
+        ax.errorbar(xdata, ydata, yerr=erry, marker=marker, linestyle=linestyle, **kwargs)
+        return ax
