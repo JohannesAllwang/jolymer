@@ -10,14 +10,31 @@ def run_program(name, *args):
     cmd = ['powershell', f'./{name}.exe', *args]
     return subprocess.run(cmd, cwd=atsas_bin)
 
-def primus(m, fname=''):
-    fullpath = r"{}".replace('\\\\', '\\').replace('/', '\\').format(join(m.path, fname)).replace('/', '\\')
-    if fname=='':
+def primus(m, toplot=[ 'processed_averaged' ]):
+    allnames = ""
+    if 'processed_averaged' in toplot:
         fullpath = r"{}".replace('\\\\', '\\').replace('/', '\\').format(join(m.get_filename())).replace('/', '\\')
-    out = run_program('primusqt', f"'{fullpath}'")
-    # for line in open(outfile):
-    #     print(line)
+        allnames += f" '{fullpath}'"
+    if 'averaged_sample' in toplot:
+        fil = m.get_averaged_fullpath(buf=False)
+        fullpath = r"{}".replace('\\\\', '\\').replace('/', '\\').format(fil).replace('/', '\\')
+        allnames += f" '{fullpath}'"
+    if 'averaged_buffer' in toplot:
+        fil = m.get_averaged_fullpath(buf=True)
+        fullpath = r"{}".replace('\\\\', '\\').replace('/', '\\').format(fil).replace('/', '\\')
+        allnames += f" '{fullpath}'"
+    if 'absolutes_sample' in toplot:
+        for fil in m.get_absolute_fullpaths(buf=False):
+            fullpath = r"{}".replace('\\\\', '\\').replace('/', '\\').format(fil).replace('/', '\\')
+            allnames += f" '{fullpath}'"
+    if 'absolutes_buffer' in toplot:
+        for fil in m.get_absolute_fullpaths(buf=True):
+            fullpath = r"{}".replace('\\\\', '\\').replace('/', '\\').format(fil).replace('/', '\\')
+            allnames += f" '{fullpath}'"
+    out = run_program('primusqt', allnames)
     return out
+
+
 
 def datgnom(m, r=20):
     infile = r"{}".replace('\\\\', '\\').format(m.get_filename()).replace('/', '\\')

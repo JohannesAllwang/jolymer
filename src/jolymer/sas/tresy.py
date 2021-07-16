@@ -14,7 +14,9 @@ def get_m(tid, T):
     AND comment = '{T} deg'
     """
     did = dbo.execute(query)[0][0]
-    return Desy(did)
+    m = Desy(did)
+    m.targetT = T
+    return m
 
 def from_query(query, T):
     with dbo.dbopen() as c:

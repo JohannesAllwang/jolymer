@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+from os.path import join
 
 from .. import database_operations as dbo
 from .. import Sample as Sample
@@ -67,15 +68,22 @@ class Desy(SAXS_Measurement):
         """
         gets the temperature in Celsius from the processed_subtracted file.
         """
-        return get_parameter('SC Target Temperature')
+        return float(self.get_parameter('SC Target Temperature'))
+
+    def get_absolute_fullpaths(self, buf=False):
+        path=self.absolute_path
+        if buf:
+            path = self.buffer_absolute_path
+        files = [join(path, fil) for fil in os.listdir(path) ]
+        return files
 
     def get_frame_dfs(self, buf=False):
         out=[]
         path=self.frames_path
         if buf:
             path = self.buffer_frames_path
-        for file in os.listdir(path):
-            df = pd.read_csv(os.path.join(path, file), skiprows=2, header=None, names=['q', 'I', 'err_I'],
+        for fil in os.listdir(path):
+            df = pd.read_csv(os.path.join(path, fil), skiprows=2, header=None, names=['q', 'I', 'err_I'],
                      delimiter='\s+', nrows = 2652)
             out.append(df)
         return out
@@ -91,6 +99,15 @@ class Desy(SAXS_Measurement):
                      delimiter='\s+', nrows = 2652)
             out.append(df)
         return out, files
+
+    def get_averaged_fullpath(self, buf=False):
+        path=self.averaged_path
+        files = os.listdir(path)
+        sorb = 'buffer' if buf else 'sample'
+        for fil in files:
+            if len(fil.split(sorb)) >1:
+                fullpath = join(path, fil)
+        return fullpath
 
     def get_averaged(self, buf=False):
         path=self.averaged_path
