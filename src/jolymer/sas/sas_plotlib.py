@@ -94,4 +94,43 @@ def absolutes(m):
     axbuf.legend()
 
 
+def pnp(m, onlyparents=False):
+    fig, axsam = plt.subplots(nrows=1, figsize=(8,10))
+    axsam.set_xscale('log')
+    axsam.set_yscale('log')
+
+    b_avgdf = m.get_averaged(buf=True)
+
+    parents = m.get_absolute_dfs()[0]
+    label = f'{len(parents)} parents'
+    for parent, color in zip(parents, plu.cm_for_l('winter', parents)):
+        x = parent.q
+        y = parent.I - b_avgdf.I
+        erry = parent.err_I + b_avgdf.err_I
+        erry = 0
+        axsam.errorbar(x, y, yerr=erry, fmt='.', color=color, label=label)
+        label = None
+    axsam.legend()
+    axsam.set_xlabel('$q\\,[\mathrm{nm^{-2}}]$')
+    axsam.set_ylabel('$I\\,[\mathrm{cm^{-1}}]$')
+
+    alpha = 0.1 if onlyparents else 1
+    axbuf = axsam
+
+    notparents = m.get_notparent_dfs()[0]
+    label = f'{len(notparents)} not parents'
+    ## Wistia
+    for parent, color in zip(notparents, plu.cm_for_l('autumn', notparents)):
+        x = parent.q
+        y = parent.I - b_avgdf.I
+        erry = parent.err_I + b_avgdf.err_I
+        erry = 0
+        axsam.errorbar(x, y, yerr=erry, fmt='.', color=color, label=label, alpha=alpha)
+        label = None
+    axbuf.legend()
+    sdf = m.get_data()
+    axsam.errorbar(sdf.q, sdf.I, fmt='.', color = 'black')
+
+
+
 

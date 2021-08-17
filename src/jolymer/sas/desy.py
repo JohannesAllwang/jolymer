@@ -57,6 +57,8 @@ class Desy(SAXS_Measurement):
         self.averaged_path = os.path.join(self.path, 'averaged')
         self.buffer_frames_path = os.path.join(self.path,'buffer', 'frames')
         self.buffer_absolute_path = os.path.join(self.path,'buffer', 'absolute')
+        self.origpath = os.path.join(self.rawdatapath, f'desy{self.datestring}', 'datacollection', 'data', 'absolute')
+        # get the path of the 
 
     def get_parameter(self, parstring):
         with open(self.get_filename()) as f:
@@ -69,6 +71,32 @@ class Desy(SAXS_Measurement):
         gets the temperature in Celsius from the processed_subtracted file.
         """
         return float(self.get_parameter('SC Target Temperature'))
+
+    def get_notparent_fullpaths(self):
+        path = self.absolute_path
+        parents = os.listdir(path) 
+        nums = []
+        for parent in parents:
+            num = parent.split('_')[1]
+            if not num in nums:
+                nums.append(num)
+        path = self.origpath
+        filenames = []
+        for num in nums:
+            filenames += [fil for fil in os.listdir(self.origpath) if fil.split('_')[1]==num]
+        filenames = [os.path.join(self.origpath, fil) for fil in filenames if not fil in parents]
+        return filenames
+
+    def get_notparent_dfs(self):
+        out = []
+        files = []
+        for path in self.get_notparent_fullpaths():
+            df = pd.read_csv(path, skiprows=2, header=None, names=['q', 'I', 'err_I'],
+                     delimiter='\s+', nrows = 2652)
+            out.append(df)
+            files.append(path)
+        return out, files
+
 
     def get_absolute_fullpaths(self, buf=False):
         path=self.absolute_path
