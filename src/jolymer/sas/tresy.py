@@ -55,6 +55,7 @@ def plot_tresyfits(tresy_numbers, model, p0, bounds, fixed_pars={}):
         ax.annotate(text, xy=(0.0, 0.0), 
                     xycoords='axes fraction')
         ax.set_ylim(1e-7, 1)
+        ax.grid()
 
     axes[1][0].set_xlabel('$q$ [1/nm]')
     axes[1][1].set_xlabel('$q$ [1/nm]')
