@@ -202,7 +202,7 @@ def continfit(measurement, seq_number, Ngrid=256, tmin=-2, bgr=0, distribution='
     for i in [1]:
         data = measurement.get_data(seq_number)
         idata += 1
-        print('evaluate Nr.:', idata)
+        # print('evaluate Nr.:', idata)
         try:
             file = measurement.name
         except AttributeError:
@@ -223,7 +223,7 @@ def continfit(measurement, seq_number, Ngrid=256, tmin=-2, bgr=0, distribution='
         # n = measurement.sample.buffer.get_n(T)
         # a = measurement.phifromseq(seq_number)
         # v = measurement.sample.buffer.get_viscosity(T)
-        print('T:', T, 'v:', v)
+        # print('T:', T, 'v:', v)
         l = 632.
         tmin = 0
         tmax = len(data)-1

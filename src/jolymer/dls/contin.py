@@ -155,6 +155,7 @@ class Contin(Cun):
         for seq_number in m.phirange(phi):
             if seq_number in m.exceptions:
                 continue
+            print(m.get_filename(seq_number))
             self.run_contin(m, seq_number)
             dff, dfd, peak_fromtos, fit_quality = self.evaluate_continfile(m, seq_number)
             # Correctly weighting the distribution:
@@ -265,6 +266,13 @@ class Contin(Cun):
             seq_number, fromto = peak
             peak = _peak(dfd, fromto, m, seq_number)
 
+    def get_average(self, m, seq_number):
+        df = self.get_fit(m, seq_number)
+        out = np.avg(df.t * df.g2)
+        return out
+
+    def get_par(self, m, seq_number):
+        df = self.seq_number
 
 parameters = []
 parameters = ["qq", "Dapp", 'alpha', 'alpha_by_s', 'obj_fctn', 'variance', 'std_dev', 'deg_freedom', 'probrej1', 'probrej2']
