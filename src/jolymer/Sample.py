@@ -364,5 +364,7 @@ def get_sample(type, id):
         return generic_Sample(id)
     elif type == 'tresy':
         return TresySample(id)
+    elif type == 'TrypsinPowder':
+        return Protein(1)
     else:
         print('No samples of that type are implemented...')
