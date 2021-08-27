@@ -76,13 +76,14 @@ def two_tresyfits(tresy_numbers, model, p0, bounds, fixed_pars={}):
         m = get_m(i, 20)
         color = 'blue'
         iqmin=0
-        fit_dict, fit_df = model.fit(m, bounds=bounds, 
+        iqmax=2300
+        fit_dict, fit_df = model.fit(m, bounds=bounds, iqmax=iqmax,
                             p0=p0, iqmin=iqmin, fixed_parameters=fixed_pars)
         # label = f'{m.sample.get_NPname()} pH {m.sample.buffer.pH} {m.sample.buffer.salt_concentration} salt'
         label = f'{m.sample.get_NPname()} pH {m.sample.buffer.pH} c({ m.sample.PS.short_name })= {m.sample.PS_gpl}'
         label = f'pH {m.sample.buffer.pH}; c({ m.sample.PS.short_name }) / c(TRY)= {m.sample.PS_gpl}'
         marker = '.'
-        df = m.get_data(cout=False)[iqmin::]
+        df = m.get_data(cout=False)[iqmin:iqmax]
         ax.errorbar(df.q, df.I, df.err_I, marker = marker, color=color,
                         linestyle='', label = label, elinewidth=0.2)
         model.plot_fit(fit_df, (fig, ax), color='salmon')
