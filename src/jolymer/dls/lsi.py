@@ -245,7 +245,8 @@ class lsi(Measurement):
         rescolor=fitcolor
         if 'color' in kwargs:
             rescolor=kwargs['color']
-        axres.plot(fitdf.t, fitdf.res, alpha=0.5, color=rescolor)
+        axres.plot(fitdf.t, fitdf.res, alpha=0.2, color=rescolor)
+        axres.set_ylabel('Relative Residuals')
         axres.set_ylim(-0.05, 0.05)
         return ax
 

@@ -122,7 +122,7 @@ def get_text_be(fit_dict):
         text = """
         $R_g =$ {0:.2f} $\\pm$ {1:.2f} nm
         $n =$ {2:.2f} $\\pm$ {3:.2f}
-        $C =$ {4:.2E}
+        $G =$ {4:.2E}
         $\\chi^2 = $ {5:.4}
         """.format(fit_dict['Rg'], fit_dict['std_Rg'],
                    fit_dict['porod_exp'], fit_dict['std_porod_exp'], 
@@ -140,13 +140,15 @@ def get_text_bef(fit_dict):
         $R_g =$ {0:.2f} $\\pm$ {1:.2f} nm
         $n =$ {2:.2f} $\\pm$ {3:.2f}
         $m_F = $ {4:.2f} $\\pm$ {5:.2f}
-        $C =$ {6:.2E}
+        $G =$ {6:.2E}
         $A_F = $ {7:.2E}
+        $bg = $ {9:.2E}
         $\\chi^2 = $ {8:.4}
         """.format(fit_dict['Rg'], fit_dict['std_Rg'],
                    fit_dict['porod_exp'], fit_dict['std_porod_exp'], 
                    fit_dict['fw_exp'], fit_dict['std_fw_exp'],
                    fit_dict['scale'], fit_dict['fw_scale'],
-                  fit_dict['chi2'])
+                  fit_dict['chi2'],
+                  fit_dict['bg'])
         return text
 beaucage_forward.get_text = get_text_bef

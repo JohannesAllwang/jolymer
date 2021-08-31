@@ -116,7 +116,7 @@ def _dist_compilation(m, fit, seq_numbers, cm, labelfunc, title,\
         label=labelfunc(m, fit, s)
         ax = m.plot_dist(s, fit, ax=ax, color=color,\
                 xspace=xspace, label=label, **kwargs)
-    ax.legend()
+    ax.legend(framealpha=0)
     ax.set_title(title)
     return ax
 def dist_seq(m,fit,seq_numbers, xspace='t'):
@@ -124,13 +124,15 @@ def dist_seq(m,fit,seq_numbers, xspace='t'):
     axd = _dist_compilation(m, fit, seq_numbers, 'viridis', seqlabel, None,ax=axd, xspace=xspace)
     axf =  _fit_compilation(m, fit, seq_numbers, 'viridis', seqlabel, None ,ax=axf)
     return fig, (axf, axd)
-def dist_phi(m, fit, seq_numbers, xspace='t'):
-    fig, (axf, axd) = plt.subplots(nrows=2, figsize=(10,10))
+def dist_phi(m, fit, seq_numbers, xspace='t', figsize=(10,10), xlim=None):
+    fig, (axf, axd) = plt.subplots(nrows=2, figsize=figsize)
     axd = _dist_compilation(m, fit, seq_numbers, 'viridis', philabel, None, ax=axd, xspace=xspace)
     axd.set_ylabel('$\\tau A(\\tau)$ [s]')
     axd.set_xlabel('$\\tau$ [s]')
+    axd.set_xlim(xlim)
     axf =  _fit_compilation(m, fit, seq_numbers, 'viridis', philabel, None, ax=axf)
     axf.set_ylabel('$g_2 - 1$')
+    axf.set_xlim(xlim)
     return fig, (axf, axd)
 
 def rh_seq(*args, **kwargs):
