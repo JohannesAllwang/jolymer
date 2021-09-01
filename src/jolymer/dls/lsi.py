@@ -28,8 +28,16 @@ class lsi(Measurement):
             c.execute(f"SELECT * FROM {self.instrument}_exceptions WHERE {self.instrument}_id=?", (lsi_id,))
             exceptions = list(c.fetchall())
             self.exceptions = [e[1] for e in exceptions]
+            c.execute(f"SELECT * FROM {self.instrument}_badangles WHERE {self.instrument}_id=?", (lsi_id,))
+            badangles = list(c.fetchall())
+            self.badangles = [phi[1] for phi in badangles]
 
         self.figures_path = os.path.join(Measurement.figures_path, f'{self.instrument}_{self.id}')
+        try:
+            self.continnice = True if 'continnice' in os.listdir(self.figures_path) else False
+        except:
+            self.continnice = False
+            print('No self.figures path yet...')
 
         if self.samplestring == None:
             self.sample = None
@@ -52,14 +60,14 @@ class lsi(Measurement):
             print('Use function self.get_scriptrow(i) with the followning:')
             for index, row in script_df.iterrows():
                 print(self.samplestring)
-                angles = range(int(row.start_angle), int(row.end_angle+1), int(row.step_angle))
-                angles = np.array(angles)
-                seq_numbers = list(range(seq_number, int(row.per_angle)*len(angles)+1 + seq_number))
+                allangles = range(int(row.start_angle), int(row.end_angle+1), int(row.step_angle))
+                allangles = np.array(allangles)
+                seq_numbers = list(range(seq_number, int(row.per_angle)*len(allangles)+1 + seq_number))
                 # print(seq_number, row.per_angle)
                 # print(seq_numbers)
-                oneT = _oneT(row.TC, angles, seq_numbers, row.per_angle, self.id, index, instrument=self.instrument)
+                oneT = _oneT(row.TC, allangles, seq_numbers, row.per_angle, self.id, index, instrument=self.instrument)
                 self.Tdict[index] = oneT
-                seq_number += int(row.per_angle)*len(angles)
+                seq_number += int(row.per_angle)*len(allangles)
                 print(f'({index}) : {row.TC}')
             self.smax = seq_number
 
@@ -127,7 +135,29 @@ class lsi(Measurement):
     def add_exceptions(self, seq_numbers, reason=''):
         for s in seq_numbers:
             self.add_exception(s, reason=reason)
-        return dbo.get_table('{self.instrument}_exceptions')
+        return dbo.get_table(f'{self.instrument}_exceptions')
+
+    def get_badangles(self):
+        query = f"""
+        SELECT badangle FROM {self.instrument}_badangles
+        WHERE {self.instrument}_id = {self.id}
+        """
+        out = dbo.execute(query)
+        return out
+
+    def add_badangle(self, angle, reason=''):
+        query = f"""
+        INSERT INTO {self.instrument}_badangles
+        VALUES ({self.id}, {angle}, '{reason}');
+        """
+        self.badangles.append(angle)
+        out = dbo.execute(query)
+        return out
+
+    def add_badangles(self, badangles, reason=''):
+        for phi in badangles:
+            self.add_badangle(phi, reason=reason)
+        return dbo.get_table(f'{self.instrument}_badangles')
 
     def get_data(self, seq_number, xmin=15, xmax=221):
         if self.mode=='mod3d':
@@ -160,7 +190,7 @@ class lsi(Measurement):
     
     def phirange(self, phi):
         "returns all the seq_numbers of the argument angle. Exceptions excepted."
-        index = np.where(self.angles == phi)[0]
+        index = np.where(self.allangles == phi)[0]
         first = int(self.per_angle * index + self.seq_numbers[0])
         delta = int(self.per_angle)
         out = []
@@ -175,7 +205,7 @@ class lsi(Measurement):
         return out
 
     def phifromseq(self, seq_number):
-        for phi in self.angles:
+        for phi in self.allangles:
             if self.seqinphi(seq_number, phi):
                 return phi
     
@@ -294,14 +324,15 @@ class lsi3d(lsi):
 
 class _oneT(lsi):
 
-    def __init__(self, TC, angles, seq_numbers, per_angle, lsi_id, script_row, instrument='lsi'):
+    def __init__(self, TC, allangles, seq_numbers, per_angle, lsi_id, script_row, instrument='lsi'):
         self.seq_numbers= seq_numbers
         if instrument == 'lsi':
             lsi.__init__(self, lsi_id, evaluate_script=False)
         elif instrument == 'lsi3d':
             lsi3d.__init__(self, lsi_id, evaluate_script=False)
         self.TC = TC
-        self.angles = angles
+        self.allangles = allangles
         self.per_angle = per_angle
         self.script_row = script_row
         self.name = f'{self.instrument}{self.id}_{int(script_row)}'
+        self.angles = [phi for phi in self.allangles if phi not in self.badangles]
