@@ -139,7 +139,7 @@ class lsi(Measurement):
 
     def get_badangles(self):
         query = f"""
-        SELECT badangle FROM {self.instrument}_badangles
+        SELECT angle FROM {self.instrument}_badangles
         WHERE {self.instrument}_id = {self.id}
         """
         out = dbo.execute(query)
