@@ -266,18 +266,19 @@ class lsi(Measurement):
             ax.set_ylim(0, 0.85)
         return ax
     
-    def plot_fit(self, seq_number, fit, fitcolor='lightsalmon', ax = None, **kwargs):
+    def plot_fit(self, seq_number, fit, fitcolor='lightsalmon', ax = None, showres=True, **kwargs):
         ax = self.plot_data(seq_number, ax=ax, **kwargs)
-        axres = ax.twinx()
         fitdf = fit.get_fit(self, seq_number)
         fitdf = fitdf[fitdf.fit<1]
         ax.plot(fitdf.t, fitdf.fit, '-', color=fitcolor)
         rescolor=fitcolor
         if 'color' in kwargs:
             rescolor=kwargs['color']
-        axres.plot(fitdf.t, fitdf.res, alpha=0.2, color=rescolor)
-        axres.set_ylabel('Relative Residuals')
-        axres.set_ylim(-0.05, 0.05)
+        if showres:
+            axres = ax.twinx()
+            axres.plot(fitdf.t, fitdf.res, alpha=0.2, color=rescolor)
+            axres.set_ylabel('Relative Residuals')
+            axres.set_ylim(-0.05, 0.05)
         return ax
 
     def plot_dist(self, seq_number, fit, ax=None, xspace='t', **kwargs):
