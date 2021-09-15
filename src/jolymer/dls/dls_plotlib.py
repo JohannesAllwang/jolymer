@@ -44,12 +44,13 @@ def seq_dat(m, seq_numbers):
 def phi_dat(m, seq_numbers):
     return _dat_compilation(m,  seq_numbers, 'viridis', philabel, None)
 
-def _fit_compilation(m, fit, seq_numbers, cm, labelfunc, title, ax=None, **kwargs):
+def _fit_compilation(m, fit, seq_numbers, cm, labelfunc, title, ax=None, showlegend=True, legendargs={}, **kwargs):
     citer = plu.cm_for_l(cm, seq_numbers)
     for s, color in zip(seq_numbers, citer):
         label=labelfunc(m, fit, s)
         ax=m.plot_fit(s, fit, ax=ax, color=color, label=label, **kwargs)
-    ax.legend()
+    if showlegend:
+        ax.legend(**legendargs)
     ax.set_title(title)
     return ax
 def seq_compilation(m,fit,seq_numbers):
@@ -110,13 +111,14 @@ def rawdata_pdf(m, fit):
             plt.close()
             
 def _dist_compilation(m, fit, seq_numbers, cm, labelfunc, title,\
-        ax=None, xspace='t', **kwargs):
+        ax=None, xspace='t', showlegend=True, legendargs={}, **kwargs):
     citer = plu.cm_for_l(cm, seq_numbers)
     for s, color in zip(seq_numbers, citer):
         label=labelfunc(m, fit, s)
         ax = m.plot_dist(s, fit, ax=ax, color=color,\
                 xspace=xspace, label=label, **kwargs)
-    ax.legend(framealpha=0)
+    if showlegend:
+        ax.legend(**legendargs)
     ax.set_title(title)
     return ax
 def dist_seq(m,fit,seq_numbers, xspace='t'):
