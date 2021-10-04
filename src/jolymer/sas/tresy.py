@@ -16,6 +16,11 @@ def get_m(tid, T):
     did = dbo.execute(query)[0][0]
     m = Desy(did)
     m.targetT = T
+    try:
+        pass
+    except:
+        pass
+
     return m
 
 def from_query(query, T):

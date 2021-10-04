@@ -119,6 +119,8 @@ def _dist_compilation(m, fit, seq_numbers, cm, labelfunc, title,\
                 xspace=xspace, label=label, **kwargs)
     if showlegend:
         ax.legend(**legendargs)
+    if 'xlabel' in kwargs:
+        ax.set_xlabel(kwargs['xlabel'])
     ax.set_title(title)
     return ax
 def dist_seq(m,fit,seq_numbers, xspace='t'):
