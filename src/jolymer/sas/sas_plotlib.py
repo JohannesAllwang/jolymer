@@ -44,11 +44,6 @@ def _fit_compilations(listofargs, **kwargs):
         ax=_fit_compilation(*args, ax=ax, **kwargs)
     return fig, axes
 
-def kratky_plot():
-    pass
-
-def guinier_plot():
-    pass
 
 # def _compilation(m, fixed_pars, label_pars, fit, cm, labelfunc, title, ax=None, **kwargs):
 #     query = f"""
@@ -169,6 +164,18 @@ def all_raw_data(m, onlyparents=False):
     sdf = m.get_data()
     axsam.errorbar(b_avgdf.q, b_avgdf.I, fmt='-', color = 'black')
 
+def kratky_plot(m, **kwargs):
 
-
+    df = m.get_data()
+    if 'ax' in kwargs:
+        ax = kwargs( 'ax' )
+    else:
+        fig, ax = plt.subplots()
+    if 'rg' in kwargs:
+        rg = kwargs.pop( 'rh' )
+    else:
+        rg = 1
+    x = df.q*1
+    y = x**2 * df.I
+    ax.plot(x, y, **kwargs)
 

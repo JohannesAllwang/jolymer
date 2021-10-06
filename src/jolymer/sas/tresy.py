@@ -164,3 +164,4 @@ def two_tresy(tresy_numbers, model, p0, bounds, fixed_pars={}):
     axes[0][1].set_xlabel('$q$ [1/nm]')
     axes[0][0].set_ylabel('$I$ [1/cm]')
     plt.tight_layout()
+
