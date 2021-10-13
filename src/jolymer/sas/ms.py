@@ -27,16 +27,20 @@ class Ms:
             ylim=kwargs.pop('ylim')
         else:
             ylim = [None, None]
-        shiftby = 0.07 if fits else 1
-        shift= 20**len(self.ms)
+        if 'topleft' in kwargs:
+            topleft = kwargs.pop('topleft')
+        else:
+            topleft=''
+        # shiftby = 0.07 if fits else 1
+        # shift= 20**len(self.ms)
+        shift = shiftby**len(self.ms)
         for m in self.ms:
             m.fit_dict, m.fit_df = m.model.fit(m, bounds=m.bounds, iqmax=m.iqmax,
                                 p0=m.p0, iqmin=m.iqmin, fixed_parameters=m.fixed_pars)
             title = f'c({m.sample.PS.short_name})={m.sample.PS_gpl} c(TRY)'
-            marker = '.'
             df = m.get_data(cout=False)[m.iqmin:m.iqmax]
-            ax.errorbar(df.q, df.I * shift, df.err_I * shift, marker = marker, color=m.color,
-                            linestyle='', label = m.label, elinewidth=0.2)
+            ax.errorbar(df.q, df.I * shift, df.err_I * shift, marker = m.marker, color=m.color,
+                            linestyle='', label = m.label, elinewidth=0.2, **kwargs)
             if fits:
                 ax.errorbar(m.fit_df.q, m.fit_df.fit*shift, marker='', color='black')
             shift = shift * shiftby
@@ -52,6 +56,7 @@ class Ms:
         if fits:
             ax.set_ylabel('Intensity [1/cm] shifted')
             text = '$I(q) = I_{Beaucage}(q) + I_F$'
+        ax.annotate(topleft, xy=(.1, .9), xycoords='axes fraction')
     #         ax.annotate(text, xy=(.1, .1), 
     #             xycoords='axes fraction')
 
@@ -70,9 +75,8 @@ class Ms:
                     m.label, m.fit_dict['chi2']
                     )
             df = m.fit_df
-            marker = '.'
             ydata = df.res/df.err_I
-            ax.plot(df.q, ydata, marker = marker, color=m.color,
+            ax.plot(df.q, ydata, marker = m.marker, color=m.color,
                             linestyle='', label = label)
         ax.legend(fontsize = 'xx-small')
         ax.set_ylabel('Normalized Residuals')
@@ -89,10 +93,9 @@ class Ms:
         else:
             ylim = [None, None]
         for m in self.ms:
-            marker = '.'
             df = m.get_data(cout=False)[m.iqmin:m.iqmax]
             label = ''
-            ax.errorbar(df.q, df.q**2 * df.I * 1000,  marker = marker, color=m.color,
+            ax.errorbar(df.q, df.q**2 * df.I * 1000,  marker = m.marker, color=m.color,
                             linestyle='', label = label, elinewidth=0.2)
             ax.legend()
             #             ax.annotate(m.partext, xy=(0.0, 0.0), xycoords='axes fraction')
@@ -116,6 +119,10 @@ class Ms:
             ylim=kwargs.pop('ylim')
         else:
             ylim = [None, None]
+        if 'topleft' in kwargs:
+            topleft = kwargs.pop('topleft')
+        else:
+            topleft=''
         for m in self.ms:
             df = m.get_data()
             phtext = f'pH {m.sample.buffer.pH}'
@@ -131,7 +138,7 @@ class Ms:
                     phtext, m.lowq_fitdict['chi2'], m.highq_fitdict['chi2'],
                 )
             
-            ax.loglog(df.q, df.I*shift, marker='o', label=label, color=m.color)
+            ax.loglog(df.q, df.I*shift, marker=m.marker, label=label, color=m.color, linestyle='', **kwargs)
             if fits:
                 ax.loglog(m.highq_fitdf.q, m.highq_fitdf.fit*shift, marker='', color='black')
                 ax.loglog(m.lowq_fitdf.q, m.lowq_fitdf.fit*shift, marker='', color='black')
@@ -139,11 +146,13 @@ class Ms:
         ax.legend(fontsize='x-small')
         ax.set_xlabel('$q$ [1/nm]')
         ax.set_ylim(*ylim)
+        ax.grid()
     #     axes[0][1].set_xlabel('$q$ [1/nm]')
         ax.set_ylabel('$I$ [1/cm]')
         if fits:
             ax.set_ylabel('Intensity [1/cm] shifted')
             text = '$I(q) = I_{Beaucage}(q) + I_F$'
+        ax.annotate(topleft, xy=(.1, .9), xycoords='axes fraction')
 
     def dres(self, **kwargs):
         if 'ax' in kwargs:
@@ -159,15 +168,13 @@ class Ms:
             label = '{}; $\\chi^2_l = {:.1f}$; $\\chi_h^2 = {:.1f}$'.format(
                     m.label, m.lowq_fitdict[ 'chi2' ], m.highq_fitdict[ 'chi2' ]
                     )
-            marker='.'
-            marker='.'
             df1 = m.lowq_fitdf
             df2 = m.highq_fitdf
             ydata1 = df1.res/df1.err_I
             ydata2 = df2.res/df2.err_I
-            ax.plot(df1.q, ydata1, marker = marker, color=m.color,
+            ax.plot(df1.q, ydata1, marker = m.marker, color=m.color,
                             linestyle='')
-            ax.plot(df2.q, ydata2, marker = marker, color=m.color,
+            ax.plot(df2.q, ydata2, marker = m.marker, color=m.color,
                             linestyle='', label = label)
         ax.legend(fontsize='xx-small')
         ax.set_ylabel('Normalized Residuals')
