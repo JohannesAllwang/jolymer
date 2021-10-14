@@ -43,13 +43,13 @@ class Ms:
                             linestyle='', label = m.label, elinewidth=0.2, **kwargs)
             if fits:
                 ax.errorbar(m.fit_df.q, m.fit_df.fit*shift, marker='', color='black')
-            shift = shift * shiftby
+            shift = shift / shiftby
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.legend(fontsize = 'x-small')
         m.partext=m.model.get_text(m.fit_dict)
         ax.set_ylim(*ylim)
-        ax.grid()
+        # ax.grid()
             
         ax.set_xlabel('$q$ [1/nm]')
         ax.set_ylabel('$I$ [1/cm]')
@@ -99,7 +99,7 @@ class Ms:
                             linestyle='', label = label, elinewidth=0.2)
             ax.legend()
             #             ax.annotate(m.partext, xy=(0.0, 0.0), xycoords='axes fraction')
-            ax.grid()
+            # ax.grid()
             ax.set_ylim(0,5)
             ax.set_xlim(0, 2.5)
             ax.set_xlabel('$q$ [1/nm]')
@@ -128,17 +128,16 @@ class Ms:
             phtext = f'pH {m.sample.buffer.pH}'
             if not m.sample.tt:
                 phtext='untreated'
-            label = phtext
             if fits:
                 m.lowq_fitdict, m.lowq_fitdf = m.lmodel.fit(m, p0=m.lp0, qmax=m.q1, bounds=m.lbounds,
                                                          fixed_parameters=m.lfixed_pars)
                 m.highq_fitdict, m.highq_fitdf = m.hmodel.fit(m, p0=m.lp0, qmin=m.q2, bounds=m.hbounds,
                                                            fixed_parameters=m.hfixed_pars)
-                label = '{}'.format(
-                    phtext, m.lowq_fitdict['chi2'], m.highq_fitdict['chi2'],
-                )
+                # label = '{}'.format(
+                #     phtext, m.lowq_fitdict['chi2'], m.highq_fitdict['chi2'],
+                # )
             
-            ax.loglog(df.q, df.I*shift, marker=m.marker, label=label, color=m.color, linestyle='', **kwargs)
+            ax.loglog(df.q, df.I*shift, marker=m.marker, label=m.label, color=m.color, linestyle='', **kwargs)
             if fits:
                 ax.loglog(m.highq_fitdf.q, m.highq_fitdf.fit*shift, marker='', color='black')
                 ax.loglog(m.lowq_fitdf.q, m.lowq_fitdf.fit*shift, marker='', color='black')
@@ -146,7 +145,7 @@ class Ms:
         ax.legend(fontsize='x-small')
         ax.set_xlabel('$q$ [1/nm]')
         ax.set_ylim(*ylim)
-        ax.grid()
+        # ax.grid()
     #     axes[0][1].set_xlabel('$q$ [1/nm]')
         ax.set_ylabel('$I$ [1/cm]')
         if fits:
