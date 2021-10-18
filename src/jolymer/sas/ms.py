@@ -44,10 +44,10 @@ class Ms:
             if fits:
                 ax.errorbar(m.fit_df.q, m.fit_df.fit*shift, marker='', color='black')
             shift = shift / shiftby
+            m.partext=m.model.get_text(m.fit_dict)
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.legend(fontsize = 'x-small')
-        m.partext=m.model.get_text(m.fit_dict)
         ax.set_ylim(*ylim)
         # ax.grid()
             
