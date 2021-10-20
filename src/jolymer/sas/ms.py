@@ -77,7 +77,7 @@ class Ms:
             df = m.fit_df
             ydata = df.res/df.err_I
             ax.plot(df.q, ydata, marker = m.marker, color=m.color,
-                            linestyle='', label = label)
+                            linestyle='', label = label, **kwargs)
         ax.legend(fontsize = 'xx-small')
         ax.set_ylabel('Normalized Residuals')
         ax.set_xlabel('$q\\mathrm{\,[nm^{-1}]}$')

@@ -10,6 +10,46 @@ import numpy as np
 import matplotlib.colors as mc
 import colorsys
 
+# For plotting:
+tum_purple = '#69085a'
+tum_dblue = '#0f1b5f'
+tum_cyan = '#00778a'
+tum_dgreen = '#00778a'
+tum_green = '#679a1d'
+tum_yellow = '#ffdc00'
+tum_dyellow = '#f9ba00'
+tum_orange = '#d64c13'
+tum_red = '#c4071b'
+tum_dred = '#9c0d16'
+# primary colors
+tum_p1 = '#0065bd'
+tum_p2 = '#ffffff'
+tum_p3 = '#000000'
+# secondary colors:
+tum_s1 = '#005293'
+tum_s2 = '#003359'
+tum_s3 = '#333333'
+tum_s4 = '#808080'
+tum_s5 = '#cccccc'
+#accent colors
+tum_a1 = '#dad7cb'
+tum_a2 = '#e37222' 
+tum_a3 = '#a2ad00'
+tum_a4 = '#98c6ea'
+tum_a5 = '#64a0c8'
+
+tum_colors = [
+    tum_purple,
+    tum_dblue,
+    tum_cyan,
+    tum_dgreen,
+    tum_green,
+    tum_yellow,
+    tum_dyellow,
+    tum_orange,
+    tum_red,
+    tum_dred]
+
     
 def colormap(name, start, stop, num):
     cm = plt.get_cmap(name)
