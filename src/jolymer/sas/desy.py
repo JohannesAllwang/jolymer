@@ -150,14 +150,14 @@ class Desy(SAXS_Measurement):
     def get_filename(self):
         return os.path.join(self.path, 'processed_subtracted.dat')
         
-    def get_data(self, cout=True, subtract_buffer='standard'):
+    def get_data(self, cout=True, altername='No', nrows=2653):
         "get data from data.csv and apply some filter."
         # path = os.path.join(self.path, 'data.csv')
-        if subtract_buffer=='standard':
+        if altername=='No':
             path = self.get_filename()
         else:
-            path = os.path.join(self.path, f'minus_{subtract_buffer}.dat')
-        df = pd.read_csv(path, sep='\s+', header=None, skiprows=3, nrows=2653, names=['q', 'I', 'err_I'])
+            path = os.path.join(self.path, f'{altername}.dat')
+        df = pd.read_csv(path, sep='\s+', header=None, skiprows=3, nrows=nrows, names=['q', 'I', 'err_I'])
         # df = pd.read_csv(filename, sep='\t', skiprows=16+xmin, nrows=xmax-xmin,
         #                  header=None, names=['t', 'g2'], engine='python')
         len_before = len(df)
