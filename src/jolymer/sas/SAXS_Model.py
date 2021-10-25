@@ -168,9 +168,10 @@ class SAXS_Model:
             args_oldfunc = args[1:len_self_pars + 1]
             args_newfunc = args[1 + len_self_pars::]
             return self_fitfunc(q, *args_oldfunc) + model_fitfunc(q, *args_newfunc)
+        def new_get_text(fit_dict):
+            return self.get_text(fit_dict) + model.get_text(fit_dict)
         newmodel = SAXS_Model(name, longname, new_parameters, new_pardict, new_fitfunc)
-        newgettext = self.get_text
-        newmodel.get_text = newgettext
+        newmodel.get_text = new_get_text
         return newmodel
 
     def get_text(self, fit_dict={}):
@@ -193,7 +194,9 @@ class Porod(SAXS_Model):
         self.fitfunc = lambda q, A, m: A*np.array(q)**-m
 
 porod = Porod()
-background = Background()
+fw = Porod()
+fw.parameters = ['fw_scale', 'fw_exp']
+bg = Background()
 
 def par_from_measurement():
     pass
@@ -215,7 +218,3 @@ def treated_untreated(fitdicts):
     untreated = combine_fitresults(ulist)
     return treated, untreated
 
-
-    
-    
-        

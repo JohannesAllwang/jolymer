@@ -9,7 +9,7 @@ from . import SAXS_Model as sasmodel
 import numpy as np
 from scipy import special
 
-def beaucage(q, Rg, G, d):
+def beaucage_function(q, Rg, G, d):
     r"""
     Beaucage introduced a model based on the polymer fractal model.
 
@@ -73,35 +73,15 @@ def beaucage(q, Rg, G, d):
     I[q == 0] = 1
     return I
 
-beaucage_dict = {
-    'Rg': {
-        'unit': 'nm',
-        'tex': '$R_g$',
-        'p0' : 1,
-        'bounds': [0,10]
-    },
-    'scale' : {
-        'unit' : '',
-        'tex' : '$A$',
-        'p0' : 0.0002,
-        'bounds': [0, 1]
-    },
-    'porod_exp' : {
-        'unit':'',
-        'tex': 'n',
-        'p0':3,
-        'bounds':[1, 6]
-    }
-}
 
 class Beaucage(sasmodel.SAXS_Model):
     
     def __init__(self):
         self.name = 'beaucage'
         self.longname = 'Beaucage'
-        self.parameters = ['Rg', 'scale', 'porod_exp']
+        self.parameters = ['beaucage_rg', 'beaucage_scale', 'beaucage_exp']
         self.pdict = {'xi' : ['$\\xi$', 'nm']}
-        self.fitfunc = beaucage
+        self.fitfunc = beaucage_function
 
     def get_text(self, fit_dict):
         text = """
@@ -109,15 +89,16 @@ class Beaucage(sasmodel.SAXS_Model):
         $m =$ {2:.2f} $\\pm$ {3:.2f}
         $A =$ {4:.2E}
         $\\chi^2 = $ {6:.4}
-        """.format(fit_dict['Rg'], fit_dict['std_Rg'],
-                   fit_dict['porod_exp'], fit_dict['std_porod_exp'], 
-                   fit_dict['scale'], fit_dict['std_scale'],
+        """.format(fit_dict['beaucage_rg'], fit_dict['std_beaucage_rg'],
+                   fit_dict['beaucage_exp'], fit_dict['std_beaucage_exp'], 
+                   fit_dict['beaucage_scale'], fit_dict['std_beaucage_scale'],
                   fit_dict['chi2'])
         return text
         
+beaucage = Beaucage()
 
-background = sasmodel.Background()
-beaucage = Beaucage().plusmodel(background)
+bg = sasmodel.Background()
+beaucage_bg = Beaucage().plusmodel(bg)
 def get_text_be(fit_dict):
         text = """
         $R_g =$ {0:.2f} $\\pm$ {1:.2f} nm
@@ -125,16 +106,16 @@ def get_text_be(fit_dict):
         $G =$ {4:.2E}
         $\\chi^2 = $ {5:.4}
         """.format(fit_dict['Rg'], fit_dict['std_Rg'],
-                   fit_dict['porod_exp'], fit_dict['std_porod_exp'], 
-                   fit_dict['scale'],
-                  fit_dict['chi2'])
+                   fit_dict['beaucage_exp'], fit_dict['std_beaucage_exp'], 
+                   fit_dict['beaucage_scale'],
+                   fit_dict['chi2'])
         return text
-beaucage.get_text = get_text_be
+beaucage_bg.get_text = get_text_be
 
-forward = sasmodel.Porod()
-forward.parameters = ['fw_scale', 'fw_exp']
+fw = sasmodel.Porod()
+fw.parameters = ['fw_scale', 'fw_exp']
 
-beaucage_forward = beaucage.plusmodel(forward, name='beaucage_fw', longname = 'Beaucage')
+fw_beaucage_bg = beaucage_bg.plusmodel(fw, name='fw_beaucage_bg', longname = 'Beaucage')
 def get_text_bef(fit_dict):
         text = """
         $R_g =$ {0:.2f} $\\pm$ {1:.2f} nm
@@ -145,10 +126,12 @@ def get_text_bef(fit_dict):
         $bg = $ {9:.2E}
         $\\chi^2 = $ {8:.4}
         """.format(fit_dict['Rg'], fit_dict['std_Rg'],
-                   fit_dict['porod_exp'], fit_dict['std_porod_exp'], 
+                   fit_dict['beaucage_exp'], fit_dict['std_beaucage_exp'], 
                    fit_dict['fw_exp'], fit_dict['std_fw_exp'],
-                   fit_dict['scale'], fit_dict['fw_scale'],
+                   fit_dict['beaucage_scale'], fit_dict['fw_scale'],
                   fit_dict['chi2'],
                   fit_dict['bg'])
         return text
-beaucage_forward.get_text = get_text_bef
+
+
+fw_beaucage_bg.get_text = get_text_bef

@@ -71,11 +71,7 @@ parameters = [["gauss_scale",   "",    100.0,  [-np.inf, np.inf], "", "Gauss sca
              ]
 # pylint: enable=bad-whitespace, line-too-long
 
-def Iq(q,
-       gauss_scale=100.0,
-       cor_length_static=100.0,
-       lorentz_scale=50.0,
-       cor_length_dynamic=20.0):
+def gauss_function(q, gauss_scale, cor_length_static):
     """
 
     :param q:                    Input q-value
@@ -88,12 +84,51 @@ def Iq(q,
 
     term1 = gauss_scale *\
             np.exp(-1.0*q*q*cor_length_static*cor_length_static/2.0)
+
+    return term1
+
+class Gauss(sasmodel.SAXS_Model):
+
+    def __init__(self):
+        self.name = 'gauss'
+        self.longname = 'Gauss'
+        self.parameters = ['gauss_scale', 'cor_length_static']
+        self.fitfunc = gauss_function
+
+    def get_text(self, fit_dict):
+        text = """
+        $\\Xi$ = {.3f} $\\pm$ {.3f}
+        $A_G$ = {.3f}
+        """.format(fit_dict['cor_length_static'], fit_dict['std_cor_length_static'],
+                fit_dict['gauss_scale'])
+        return text
+
+
+def lorentz_function(q, lorentz_scale, cor_length_dynamic):
     term2 = lorentz_scale /\
             (1.0+(q*cor_length_dynamic)*(q*cor_length_dynamic))
+    return term2
 
-    return term1 + term2
 
-# Iq.vectorized = True  # Iq accepts an array of q values
+class Lorentz(sasmodel.SAXS_Model):
+
+    def __init__(self):
+        self.name = 'lorentz'
+        self.longname = 'Lorentz'
+        self.parameters = ['lorentz_scale', 'cor_length_dynamic']
+        self.fitfunc = lorentz_function
+
+    def get_text(self, fit_dict):
+        text = """
+        $\\xi = {.3f} \\pm {.3f}$ nm
+        $A_L = {.3f}$
+        """.format(fit_dict['cor_length_dynamic'], fit_dict['std_cor_length_dynamic'], 
+                fit_dict['lorentz_scale'])
+        return text
+
+def Iq(q, gauss_scale, cor_length_static, lorentz_scale, cor_length_dynamic):
+    return gauss_function(q, gauss_scale, cor_length_static) + lorentz_function(q, lorentz_scale, cor_length_dynamic)
+
 
 class GaussLorentzGel(sasmodel.SAXS_Model):
     
@@ -107,9 +142,9 @@ class GaussLorentzGel(sasmodel.SAXS_Model):
     def get_text(self, fit_dict):
         text = """
         $\\zeta_s =$ {0:.2f} $\\pm$ {1:.2f} nm
-        $\\zeta_d =$ {2:.2f} $\\pm$ {3:.2f}
-        $A_Gauss =$ {4:.2E}
-        $A_Lorentz =$ {6:.2E}
+        $\\zeta_d =$ {2:.2f} $\\pm$ {3:.2f} nm
+        $A_{{Gauss}} =$ {4:.2E}
+        $A_{{Lorentz}} =$ {6:.2E}
         $\\chi^2 = $ {8:.4}
         """.format(fit_dict['cor_length_static'], fit_dict['std_cor_length_static'],
                    fit_dict['cor_length_dynamic'], fit_dict['std_cor_length_dynamic'], 
@@ -117,10 +152,18 @@ class GaussLorentzGel(sasmodel.SAXS_Model):
                    fit_dict['lorentz_scale'], fit_dict['std_lorentz_scale'],
                   fit_dict['chi2'])
         return text
+
+lorentz = Lorentz()
+gauss = Gauss()
+
+gauss_lorentz = GaussLorentzGel()
         
-background = sasmodel.Background()
-gauss_lorentz_gel = GaussLorentzGel().plusmodel(background)
+bg = sasmodel.Background()
+gauss_lorentz_bg = GaussLorentzGel().plusmodel(bg)
 
 forward = sasmodel.Porod()
 forward.parameters = ['fw_scale', 'fw_exp']
-gauss_lorentz_gel_forward = gauss_lorentz_gel.plusmodel(forward, name='gauss_lorentz_gel_forward', longname = 'Gauss Lorentz Gel Forward')
+fw_gauss_lorentz = gauss_lorentz.plusmodel(forward, name='fw_gauss_lorentz', longname = 'Gauss Lorentz Gel Forward')
+fw_gauss_lorentz_bg = gauss_lorentz_bg.plusmodel(forward, name='fw_gauss_lorentz_bg', longname = 'Gauss Lorentz Gel Forward')
+
+
