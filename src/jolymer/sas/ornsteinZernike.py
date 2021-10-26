@@ -22,6 +22,13 @@ class OZ(sasmodel.SAXS_Model):
                            'lorentz_scale']
         self.pdict = {'xi' : ['$\\xi$', 'nm']}
         self.fitfunc = ornsteinZernike
+
+    def get_text(self, fit_dict):
+        text = """
+        $\\xi = {:.3f} \\pm {:.3f}$ nm
+        $n = {:.3f} \\pm {:.3f}$
+        $A = {:.3f}
+        """
         
     def get_clustering_strength(self, fitdict, q):
         A = fitdict['porod_scale']
@@ -31,7 +38,8 @@ class OZ(sasmodel.SAXS_Model):
         
  
 background = sasmodel.Background()
-oz = OZ().plusmodel(background)
+oz = OZ()
+oz_bg = oz.plusmodel(background)
 def get_text_oz(fit_dict):
     text="""
     $n =$ {0:.2f} $\\pm$ {1:.2f}
@@ -43,7 +51,7 @@ def get_text_oz(fit_dict):
                   fit_dict['lorentz_scale'], 
                   fit_dict['chi2'])   
     return text
-oz.get_text = get_text_oz
+oz_bg.get_text = get_text_oz
 
 forward = sasmodel.Porod()
 

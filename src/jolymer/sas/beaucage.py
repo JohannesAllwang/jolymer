@@ -105,7 +105,7 @@ def get_text_be(fit_dict):
         $n =$ {2:.2f} $\\pm$ {3:.2f}
         $G =$ {4:.2E}
         $\\chi^2 = $ {5:.4}
-        """.format(fit_dict['Rg'], fit_dict['std_Rg'],
+        """.format(fit_dict['beaucage_rg'], fit_dict['std_beaucage_rg'],
                    fit_dict['beaucage_exp'], fit_dict['std_beaucage_exp'], 
                    fit_dict['beaucage_scale'],
                    fit_dict['chi2'])

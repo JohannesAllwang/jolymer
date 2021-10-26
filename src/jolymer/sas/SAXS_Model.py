@@ -168,8 +168,10 @@ class SAXS_Model:
             args_oldfunc = args[1:len_self_pars + 1]
             args_newfunc = args[1 + len_self_pars::]
             return self_fitfunc(q, *args_oldfunc) + model_fitfunc(q, *args_newfunc)
+        self_get_text = self.get_text
+        model_get_text = model.get_text
         def new_get_text(fit_dict):
-            return self.get_text(fit_dict) + model.get_text(fit_dict)
+            return self_get_text(fit_dict) + model_get_text(fit_dict)
         newmodel = SAXS_Model(name, longname, new_parameters, new_pardict, new_fitfunc)
         newmodel.get_text = new_get_text
         return newmodel
@@ -185,6 +187,12 @@ class Background(SAXS_Model):
         self.parameters = ['bg']
         self.fitfunc = lambda q, const: const*np.ones(len(q))
 
+    def get_text(self, fit_dict):
+        text = """
+        bg = {:.3f}
+        """.format(fit_dict['bg'])
+        return text
+
 class Porod(SAXS_Model):
 
     def __init__(self):
@@ -192,6 +200,14 @@ class Porod(SAXS_Model):
         self.longname = 'Porod'
         self.parameters = ['porod_scale', 'porod_exp']
         self.fitfunc = lambda q, A, m: A*np.array(q)**-m
+
+    def get_text(self, fit_dict):
+        text = """
+        $n = {:.3f} \\pm {:.3f}$
+        $A = {:.3f}$
+        """.format(fit_dict['porod_exp'], fit_dict['std_porod_exp'],
+                fit_dict['porod_scale'])
+        return text
 
 porod = Porod()
 fw = Porod()
@@ -218,3 +234,28 @@ def treated_untreated(fitdicts):
     untreated = combine_fitresults(ulist)
     return treated, untreated
 
+
+# def add_models(models):
+#     name = ''
+#     parameters = []
+#     for model in models:
+#         parameters += model.parameters
+#         toname = model.name if name=='' else f'_{model.name}'
+#         name += toname
+
+#         new_parameters = self.parameters.copy()
+#         len_self_pars = len(self.parameters)
+#         len_model_pars = len(model.parameters)
+#         for par in model.parameters:
+#             new_parameters.append(par)
+#         self_fitfunc = self.fitfunc
+#         model_fitfunc = model.fitfunc
+#         def new_fitfunc(*args):
+#             q = args[0]
+#             args_oldfunc = args[1:len_self_pars + 1]
+#             args_newfunc = args[1 + len_self_pars::]
+#             return self_fitfunc(q, *args_oldfunc) + model_fitfunc(q, *args_newfunc)
+#         def new_get_text(fit_dict):
+#             return self.get_text(fit_dict) + model.get_text(fit_dict)
+#         newmodel = SAXS_Model(name, longname, new_parameters, new_pardict, new_fitfunc)
+#         newmodel.get_text = new_get_text

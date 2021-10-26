@@ -17,8 +17,8 @@ class DAB(sasmodel.SAXS_Model):
 
     def get_text(self, fit_dict):
         text = """
-        $\\xi = {.3f} \\pm {.3f}$ nm
-        $A_{{dab}} = {.3f}
+        $\\xi = {:.3f} \\pm {:.3f}$ nm
+        $A_{{dab}} = {:.3f}
         """.format(fit_dict['dab_cor_length'], fit_dict['std_dab_cor_length'],
                 fit_dict['dab_scale'])
 
