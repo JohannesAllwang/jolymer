@@ -171,7 +171,11 @@ class SAXS_Model:
         self_get_text = self.get_text
         model_get_text = model.get_text
         def new_get_text(fit_dict):
-            return self_get_text(fit_dict) + model_get_text(fit_dict)
+            try:
+                return self_get_text(fit_dict) + model_get_text(fit_dict)
+            except:
+                print('Something is wrong with new_get_text')
+                return model_get_text(fit_dict)
         newmodel = SAXS_Model(name, longname, new_parameters, new_pardict, new_fitfunc)
         newmodel.get_text = new_get_text
         return newmodel
@@ -234,28 +238,64 @@ def treated_untreated(fitdicts):
     untreated = combine_fitresults(ulist)
     return treated, untreated
 
+class AddSaxsModels(SAXS_Model):
 
-# def add_models(models):
-#     name = ''
-#     parameters = []
-#     for model in models:
-#         parameters += model.parameters
-#         toname = model.name if name=='' else f'_{model.name}'
-#         name += toname
+    def __init__(self, models):
+        self.models = models
+        name = ''
+        parameters = []
+        for model in self.models:
+            model.parloc = list( range(
+                len(parameters) + 1, len(parameters) + len(model.parameters) + 1
+                ) )
+            parameters += model.parameters
+            toname = model.name if name=='' else f'_{model.name}'
+            name += toname
+        self.parameters = parameters
+        self.name = name
+        self.longname = name
 
-#         new_parameters = self.parameters.copy()
-#         len_self_pars = len(self.parameters)
-#         len_model_pars = len(model.parameters)
-#         for par in model.parameters:
-#             new_parameters.append(par)
-#         self_fitfunc = self.fitfunc
-#         model_fitfunc = model.fitfunc
-#         def new_fitfunc(*args):
-#             q = args[0]
-#             args_oldfunc = args[1:len_self_pars + 1]
-#             args_newfunc = args[1 + len_self_pars::]
-#             return self_fitfunc(q, *args_oldfunc) + model_fitfunc(q, *args_newfunc)
-#         def new_get_text(fit_dict):
-#             return self.get_text(fit_dict) + model.get_text(fit_dict)
-#         newmodel = SAXS_Model(name, longname, new_parameters, new_pardict, new_fitfunc)
-#         newmodel.get_text = new_get_text
+    def fitfunc(self, *args):
+        q = args[0]
+        out = np.zeros(len(q))
+        for model in self.models:
+            arguments = [args[i] for i in model.parloc]
+            out += model.fitfunc(q, *arguments)
+        return out
+
+    def get_text(self, fit_dict):
+        text = ''
+        for model in self.models:
+            text += model.get_text(fit_dict)
+        return text
+
+
+
+def add_models(models):
+    name = ''
+    parameters = []
+    for model in models:
+        parameters += model.parameters
+        toname = model.name if name=='' else f'_{model.name}'
+        name += toname
+
+        new_parameters = self.parameters.copy()
+        len_self_pars = len(self.parameters)
+        len_model_pars = len(model.parameters)
+        for par in model.parameters:
+            new_parameters.append(par)
+        self_fitfunc = self.fitfunc
+        model_fitfunc = model.fitfunc
+        def new_fitfunc(*args):
+            q = args[0]
+            args_oldfunc = args[1:len_self_pars + 1]
+            args_newfunc = args[1 + len_self_pars::]
+            return self_fitfunc(q, *args_oldfunc) + model_fitfunc(q, *args_newfunc)
+        def new_get_text(fit_dict):
+            out = ''
+            for model in models:
+                out += model.get_text(fit_dict)
+            return out
+        newmodel = SAXS_Model(name, longname, new_parameters, new_pardict, new_fitfunc)
+        newmodel.get_text = new_get_text
+    return outmodel

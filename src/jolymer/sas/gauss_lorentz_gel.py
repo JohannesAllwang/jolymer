@@ -97,8 +97,8 @@ class Gauss(sasmodel.SAXS_Model):
 
     def get_text(self, fit_dict):
         text = """
-        $\\Xi$ = {.3f} $\\pm$ {.3f}
-        $A_G$ = {.3f}
+        $\\Xi$ = {:.3f} $\\pm$ {:.3f}
+        $A_G$ = {:.3f}
         """.format(fit_dict['cor_length_static'], fit_dict['std_cor_length_static'],
                 fit_dict['gauss_scale'])
         return text
@@ -120,8 +120,8 @@ class Lorentz(sasmodel.SAXS_Model):
 
     def get_text(self, fit_dict):
         text = """
-        $\\xi = {.3f} \\pm {.3f}$ nm
-        $A_L = {.3f}$
+        $\\xi = {:.3f} \\pm {:.3f}$ nm
+        $A_L = {:.3f}$
         """.format(fit_dict['cor_length_dynamic'], fit_dict['std_cor_length_dynamic'], 
                 fit_dict['lorentz_scale'])
         return text

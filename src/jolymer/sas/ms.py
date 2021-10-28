@@ -15,6 +15,7 @@ class Ms:
 
     def __init__(self, ms):
         self.ms = ms
+        self.model = ms[0].model
 
 
     def fits(self, fits=True, shiftby=1, **kwargs):
@@ -178,3 +179,45 @@ class Ms:
         ax.legend(fontsize='xx-small')
         ax.set_ylabel('Normalized Residuals')
         ax.set_xlabel('$q\\mathrm{\,[nm^{-1}]}$')
+
+    def save_fit_results(self, path, **kwargs):
+        par_dict = {}
+        for par in self.model.parameters:
+            par_dict[par] = []
+            par_dict[f'std_{par}'] = []
+            for m in self.ms:
+                par_dict[par].append(m.fit_dict[par])
+                par_dict[f'std_{par}'].append(m.fit_dict['std_'+par])
+        self.df = pd.DataFrame(par_dict)
+        self.df.to_csv(path)
+        return self.df
+
+    def markdown_table(self, **kwargs):
+        out = '| parameter |'
+        for m in self.ms:
+            out += f'{m.label} |'
+        out += '\n | --- |'
+        for m in self.ms:
+            out += f'--- |'
+        out += '\n'
+        for par in self.model.parameters:
+            out += f'| {par} |'
+            for m in self.ms:
+                out += '{:.2f} ± {:.2f} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
+            out += '\n'
+        return out
+
+    def markdown_latex_table(self, **kwargs):
+        out = '| parameter |'
+        for m in self.ms:
+            out += f'{m.label} |'
+        out += '\n | --- |'
+        for m in self.ms:
+            out += f' --- |'
+        out += '\n'
+        for par in self.model.parameters:
+            out += f'| ${self.model.pardict["par"]["latex"]}$ |'
+            for m in self.ms:
+                out += '{:.2f} \\pm {:.2f} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
+            out += '\n'
+        return out

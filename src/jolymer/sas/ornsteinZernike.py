@@ -8,9 +8,9 @@ Created on Mon Dec 14 17:00:15 2020
 from . import SAXS_Model as sasmodel
 import numpy as np
 
-def ornsteinZernike(q, xi, lorentz_exp, lorentz_scale):
+def ornsteinZernike(q, xi, oz_exp, oz_scale):
     q = np.array(q)
-    I = lorentz_scale / (1+ (q*xi)**lorentz_exp) 
+    I = oz_scale / (1+ (q*xi)**oz_exp) 
     return I
 
 class OZ(sasmodel.SAXS_Model):
@@ -18,8 +18,8 @@ class OZ(sasmodel.SAXS_Model):
     def __init__(self):
         self.name = 'oz'
         self.longname = 'Ornstein Zernike'
-        self.parameters = ['xi', 'lorentz_exp', 
-                           'lorentz_scale']
+        self.parameters = ['xi', 'oz_exp', 
+                           'oz_scale']
         self.pdict = {'xi' : ['$\\xi$', 'nm']}
         self.fitfunc = ornsteinZernike
 
@@ -28,7 +28,10 @@ class OZ(sasmodel.SAXS_Model):
         $\\xi = {:.3f} \\pm {:.3f}$ nm
         $n = {:.3f} \\pm {:.3f}$
         $A = {:.3f}
-        """
+        """.format(fit_dict['xi'], fit_dict['std_xi'], 
+                   fit_dict['oz_exp'], fit_dict['std_oz_exp'], 
+                   fit_dict['oz_scale'])
+        return text
         
     def get_clustering_strength(self, fitdict, q):
         A = fitdict['porod_scale']
@@ -46,9 +49,9 @@ def get_text_oz(fit_dict):
     $\\xi =$ {2:.2f} $\\pm$ {3:.2f} nm
     $C = $ {4:.2E} 
     $\chi^2=$ {5:.2f}
-    """.format(fit_dict['lorentz_exp'], fit_dict['std_lorentz_exp'], 
+    """.format(fit_dict['oz_exp'], fit_dict['std_oz_exp'], 
                   fit_dict['xi'], fit_dict['std_xi'], 
-                  fit_dict['lorentz_scale'], 
+                  fit_dict['oz_scale'], 
                   fit_dict['chi2'])   
     return text
 oz_bg.get_text = get_text_oz
@@ -65,10 +68,10 @@ def get_text_ozp(fit_dict):
     $C = $ {6:.2E} 
     $A_F = $ {7:.2E}
     $\chi^2=$ {8:.2f}
-    """.format(fit_dict['lorentz_exp'], fit_dict['std_lorentz_exp'], 
+    """.format(fit_dict['oz_exp'], fit_dict['std_oz_exp'], 
                   fit_dict['porod_exp'],fit_dict['std_porod_exp'],
                   fit_dict['xi'], fit_dict['std_xi'], 
-                  fit_dict['lorentz_scale'], fit_dict['porod_scale'],
+                  fit_dict['oz_scale'], fit_dict['porod_scale'],
                   fit_dict['chi2'])
     return text
 oz_porod.get_text = get_text_ozp

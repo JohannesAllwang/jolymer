@@ -21,5 +21,6 @@ class DAB(sasmodel.SAXS_Model):
         $A_{{dab}} = {:.3f}
         """.format(fit_dict['dab_cor_length'], fit_dict['std_dab_cor_length'],
                 fit_dict['dab_scale'])
+        return text
 
 dab = DAB()
