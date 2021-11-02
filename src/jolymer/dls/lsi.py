@@ -19,8 +19,9 @@ from ..Measurement import Measurement
 
 class lsi(Measurement):
 
+    # def __init__(self, )
     
-    def __init__(self, lsi_id, instrument = 'lsi', evaluate_script = True):
+    def __init__(self, lsi_id, instrument='lsi', evaluate_script=True):
         self.instrument = instrument
         with dbo.dbopen() as c:
             c.execute(f"SELECT * FROM {self.instrument}_measurements WHERE id=?", (lsi_id,))
@@ -159,9 +160,15 @@ class lsi(Measurement):
             self.add_badangle(phi, reason=reason)
         return dbo.get_table(f'{self.instrument}_badangles')
 
-    def get_data(self, seq_number, xmin=15, xmax=221):
-        if self.mode=='mod3d':
-            xmax=170
+    def get_data(self, seq_number, **kwargs):
+        if 'xmin' in kwargs:
+            xmin = kwargs.pop('xmin')
+        else:
+            xmin = 15
+        if 'xmax' in kwargs:
+            xmax = kwargs.pop('xmax')
+        else:
+            xmax = 170 if self.mode=='mod3d' else 221
         filename = self.rawdata_filename(seq_number)
         df = pd.read_csv(filename, sep='\s+', skiprows=16+xmin, nrows=xmax-xmin,
                          header=None, names=['t', 'g2'], engine='python')
@@ -322,6 +329,41 @@ class lsi3d(lsi):
     def __init__(self, lsi_id, evaluate_script=True):
         lsi.__init__(self, lsi_id, instrument='lsi3d', evaluate_script=evaluate_script)
 
+# def get_measurements(instrument, lsid, **kwargs):
+    # over_m is mainly for looking up the protocoll
+    # over_m = lsi.from_db(lsid, instrument=instrument)
+    # script_df = pd.read_csv(f'{over_m.path}/{over_m.filename}.lsiscript', sep='\t', names=['index', 'start_angle', 'end_angle'
+                                                                # ,'step_angle', 'per_angle', 'sec', 'TODO1',
+                                                                # 'TODO2', 'TODO3', 'TC'], index_col=0)
+    # Tlist = [x for x in set(script_df.TC)]
+    # Tlist.sort() # Why am I sorting?
+    # over_m.TCs = Tlist
+    # over_m.smin = 1 # ?
+    # over_m.Tdict = {}
+
+    # seq_number = over_m.smin
+    # print('Use function self.get_scriptrow(i) with the followning:')
+    # for index, row in script_df.iterrows():
+    #     allangles = range(int(row.start_angle), int(row.end_angle+1), int(row.step_angle))
+        # allangles = np.array(allangles)
+        # seq_numbers = list(range(seq_number, int(row.per_angle)*len(allangles)+1 + seq_number))
+        # oneT = _oneT(row.TC, allangles, seq_numbers, row.per_angle, self.id, index, instrument=self.instrument)
+        # over_m.Tdict[index] = oneT
+        # seq_number += int(row.per_angle)*len(allangles)
+        # print(f'({index}) : {row.TC}')
+    # over_m.smax = seq_number # This is a bit unnecesarry
+
+    # self.seq_numbers = range(int(self.smin), int(self.smax)+1)
+    # # self.exceptions = [float(e) for e in exceptions]
+
+#         self.rmin = 2e-9
+        # self.rmax = 2_000e-9
+        # self.filename += '_#.dat'
+        # if os.path.exists(self.rawdata_filename('0')):
+        #     self.seq_numbers = [x-1 for x in self.seq_numbers]
+        # self.name = f'{self.instrument}{self.id}'
+        # # return self.Tdict
+
 
 class _oneT(lsi):
 
@@ -337,3 +379,6 @@ class _oneT(lsi):
         self.script_row = script_row
         self.name = f'{self.instrument}{self.id}_{int(script_row)}'
         self.angles = [phi for phi in self.allangles if phi not in self.badangles]
+
+def get_oneT(mid, row=1, instrument='lsi3d'):
+    return lsi3d(mid, instrument=instrument).get_scriptrow(row)
