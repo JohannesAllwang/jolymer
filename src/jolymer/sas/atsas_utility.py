@@ -31,6 +31,10 @@ def primus(m, toplot=[ 'processed_averaged' ]):
         for fil in m.get_absolute_fullpaths(buf=True):
             fullpath = r"{}".replace('\\\\', '\\').replace('/', '\\').format(fil).replace('/', '\\')
             allnames += f" '{fullpath}'"
+    # if 'parents_sample' in toplot:
+    #     for fil in m.get_paget_absolute_fullpaths(buf=True):
+    #         fullpath = r"{}".replace('\\\\', '\\').replace('/', '\\').format(fil).replace('/', '\\')
+    #         allnames += f" '{fullpath}'"
     out = run_program('primusqt', allnames)
     return out
 

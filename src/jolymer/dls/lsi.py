@@ -104,6 +104,21 @@ class lsi(Measurement):
                 if line.split(':')[0] == name:
                     return line.split(':')[1]
 
+    def get_rayleigh_ratio(self, **kwargs):
+        """
+        Calculates the rayleigh ratio using a solvent measurement and a standard.
+
+        pars:
+        solvent : solvent measurement lsi object
+        standard : lsi object with the data for (usually) toluene
+
+        returns:
+        dataframe q, I, err_I
+        """
+        T = Istd_abs / Istd
+        out = (Isolution - Isolvent) * T
+        return out
+
     def get_TK(self):
         return self.TC + 273.15
 
@@ -175,6 +190,10 @@ class lsi(Measurement):
         return df
 
     def get_summary(self):
+        """
+        What the hell does this function do?
+        Something CONTIN related?
+        """
         filename = self.rawdata_filename('')
         # Scattering angle   Mean_CR * sin(angle) / Laser Intensity (kHz/mW)    
         # g2(t=0)-1    CR CHA (kHz)    CR CHB (kHz)    Temperature (K)    Laser intensity (mW) Hydrodynamic Radius (nm) Width (nm)
@@ -253,6 +272,9 @@ class lsi(Measurement):
         return self.sample.get_viscosity(self.get_TK())
     
     def plot_data(self, seq_number, ax=None, **kwargs):
+        """
+        This should most likely not be a function of the lsi class.
+        """
         if ax==None:
             fig, ax = plt.subplots()
             ax.set_xlabel('$\\tau$ [s]')
