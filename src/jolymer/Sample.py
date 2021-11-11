@@ -185,6 +185,9 @@ class Buffer(Sample):
     def get_n(self, TK, wl):
         if self.id == 0:
             return n_water(TK, wl)
+        else:
+            print('Using the refractive index of water. (In the Buffer Class)')
+            return n_water(TK, wl)
 
 class pps_Sample(Sample):
     

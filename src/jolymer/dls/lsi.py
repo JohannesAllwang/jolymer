@@ -115,8 +115,8 @@ class lsi(Measurement):
         returns:
         dataframe q, I, err_I
         """
-        T = Istd_abs / Istd
-        out = (Isolution - Isolvent) * T
+        transmission = Istd_abs / Istd
+        out = (Isolution - Isolvent) * transmission
         return out
 
     def get_TK(self):
@@ -191,8 +191,7 @@ class lsi(Measurement):
 
     def get_summary(self):
         """
-        What the hell does this function do?
-        Something CONTIN related?
+        gets the summary file as a pandas dataframe
         """
         filename = self.rawdata_filename('')
         # Scattering angle   Mean_CR * sin(angle) / Laser Intensity (kHz/mW)    
@@ -207,6 +206,54 @@ class lsi(Measurement):
         mask = df.seq_number.apply(lambda x: any(item for item in self.seq_numbers if item == x))
         df = df[mask]
         return df
+
+    def get_sls(self, buf=None, toluene=None):
+        df_summary = self. get_summary()
+        dict_sls = {'angle' : self.angles,
+                'q' : [self.q(phi) for phi in self.angles],
+                # 'g20' : [],
+                'CRA' : [],
+                'CRB' : [],
+                'I0' : [],
+                'Isample' : [],
+                # 'err_g20' : [],
+                'err_CRA' : [],
+                'err_CRB' : [],
+                'err_I0' : [],
+                'err_Isample' : []
+                }
+        for angle in self.angles:
+            g20s = []
+            CRAs = []
+            CRBs = []
+            I0s = []
+            Isamples = []
+            for seq in self.phirange(angle):
+                # g20s.append(float(df_summary.loc[df_summary.seq_number == seq].g20))
+                print(df_summary.loc[df_summary.seq_number == seq].CRA)
+                CRAs.append(float(df_summary.loc[df_summary.seq_number == seq].CRA))
+                CRBs.append(float(df_summary.loc[df_summary.seq_number == seq].CRB))
+                I0s.append(float(df_summary.loc[df_summary.seq_number == seq].I0))
+                Isamples.append(float(df_summary.loc[df_summary.seq_number == seq].I))
+            # dict_sls['g20'].append(np.mean(g20s))
+            dict_sls['CRA'].append(np.mean(CRAs))
+            dict_sls['CRB'].append(np.mean(CRBs))
+            dict_sls['I0'].append(np.mean(I0s))
+            dict_sls['Isample'].append(np.mean(Isamples))
+            # dict_sls['err_g20'].append(np.std(g20s))
+            dict_sls['err_CRA'].append(np.std(CRAs))
+            dict_sls['err_CRB'].append(np.std(CRBs))
+            dict_sls['err_I0'].append(np.std(I0s))
+            dict_sls['err_Isample'].append(np.std(Isamples))
+        df = pd.DataFrame(dict_sls)
+        if buf==None:
+            return df
+        buf.angles = self.angles
+        df['Ibuf'] = buf.get_sls().Isample
+        df['err_Ibuf'] = buf.get_sls().err_Isample
+        df['I'] = df.Isample - df.Ibuf
+        return df
+
 
     def get_fitpar(self, fit, parameter):
         pass
