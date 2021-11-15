@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import math
 
+cmd.set('ray_opaque_background', 0)
+
 def rgyrate(selection='(all)', quiet=1):
     '''
 DESCRIPTION

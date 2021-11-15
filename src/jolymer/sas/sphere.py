@@ -1,3 +1,7 @@
+from . import SAXS_Model as sasmodel
+import numpy as np
+from scipy import special
+
 
 def _fa_sphere(qr):
     """
@@ -78,6 +82,33 @@ def sphere(q, radius, contrast=1):
     result.I0 = fa0**2
     result.fa0 = fa0
     result.contrast = contrast
-    result.modelname = inspect.currentframe().f_code.co_name
     return result
 
+def sphere_fitfunc(q, scale, R, V=1, Drho=1):
+    """
+    This is the equation from the sasview documentation.
+    The actual sasview implementation uses C and I don't know how to do that myself.
+    """
+    qR = q * R
+    Iq = (np.sin(qR) - qR * np.cos(qR)) / (qR ** 3)
+    Iq = 3 * V * Drho * Iq
+    Iq = scale * Iq * Iq / V
+    return Iq
+
+class Sphere(sasmodel.SAXS_Model):
+
+    def __init__(self):
+        self.name = 'sphere'
+        self.longname = 'Sphere'
+        self.parameters = ['sphere_scale', 'sphere_radius']
+        self.fitfunc = sphere_fitfunc
+
+    def get_text(self, fit_dict):
+        text = """
+        $R = {:.3f} \\pm {:.3f}\\mathrm{{\\,nm}}
+        $A_{{Sphere}} = {:.3e}$
+        """.format(fit_dict['sphere_radius'], fit_dict['std_sphere_radius'],
+                fit_dict['sphere_scale'])
+        return text
+
+sphere = Sphere()

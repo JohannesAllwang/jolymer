@@ -7,6 +7,7 @@ from .triple_beaucage import tbeaucage
 from .SAXS_Model import porod, bg, fw, AddSaxsModels
 from .gaussian_peak import gel_model
 from .dab import dab
+from .sphere import sphere
 
 
 beaucage_gauss_lorentz_bg = beaucage_bg.plusmodel(gauss_lorentz, name = 'beaucage_gauss_lorentz_bg', longname = 'Beaucage and gauss lorentz gel')

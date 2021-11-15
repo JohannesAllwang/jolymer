@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.colors as mc
 import colorsys
 
+
 # For plotting:
 tum_purple = '#69085a'
 tum_dblue = '#0f1b5f'
@@ -50,6 +51,10 @@ tum_colors = [
     tum_red,
     tum_dred]
 
+def alterhex(color):
+    return color.replace('#', '0x')
+
+
     
 def colormap(name, start, stop, num):
     cm = plt.get_cmap(name)
@@ -59,6 +64,15 @@ def colormap(name, start, stop, num):
 def cm_for_l(name, l, start=0.1, stop=0.9):
     num = len(l)
     return colormap(name, start, stop, num)
+def fromto_colormap(color1, color2, sth):
+    pass
+
+# top = tum_blues
+# bottom = cm.get_cmap('Blues', 128)
+# newcolors = np.vstack((top(np.linspace(0, 1, 128)),
+                       # bottom(np.linspace(0, 1, 128))))
+
+tum_blue_white_red = mc.LinearSegmentedColormap.from_list("tum_blue_to_red", [tum_dred, 'white', tum_s1])
 
 def n_subplots(n, subplot_size=(5, 4)):
     sw, sh = subplot_size
@@ -83,6 +97,11 @@ def lighten_color(color, amount=0.5):
         c = color
     c = colorsys.rgb_to_hls(*mc.to_rgb(c))
     return colorsys.hls_to_rgb(c[0], 1 - amount * (1 - c[1]), c[2])
+
+tum_blues = mc.ListedColormap(
+        [tum_s1, lighten_color(tum_s1, 0.8), lighten_color(tum_s1, 0.5), lighten_color(tum_s1, 0.2)]
+        )
+tum_blue_to_red = mc.LinearSegmentedColormap.from_list("tum_blue_to_red", [tum_dred, lighten_color(tum_dred, 0.3), lighten_color(tum_s1, 0.3), tum_s1])
 
 class data_linewidth_plot():
 
