@@ -5,6 +5,24 @@ from pymol import cmd
 import numpy as np
 import pandas as pd
 import math
+import subprocess
+import getpass
+
+def run_program(name, *args):
+    cmd = ['powershell', f'{name}', *args]
+    return subprocess.run(cmd, cwd=pdb_directory)
+
+
+# pdb2pqr wrapper stuff:
+pdb_directory = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\pdb_files"
+
+def pdb2pqr_help():
+    out = run_program('pdb2pqr30', '--help')
+    return out
+
+def pdb2pqr(infile, outfile, *args):
+    out = run_program('pdb2pqr30', infile, outfile, *args)
+    return out
 
 cmd.set('ray_opaque_background', 0)
 
