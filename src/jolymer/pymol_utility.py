@@ -8,6 +8,12 @@ import math
 import subprocess
 import getpass
 
+import matplotlib.pyplot as plt
+import matplotlib.colors as mc
+
+from . import plot_utility as plu
+
+
 def run_program(name, *args):
     cmd = ['powershell', f'{name}', *args]
     return subprocess.run(cmd, cwd=pdb_directory)
@@ -151,3 +157,7 @@ def plot_rg():
     com('chain A and polymer', object='com', vdw=r)
 
     pymol.util.cbc()
+    print('test2')
+
+cmd.set_color('red', mc.to_rgb(plu.tum_dred))
+cmd.set_color('blue', mc.to_rgb(plu.tum_s1))
