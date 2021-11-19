@@ -56,6 +56,18 @@ def datgnom(m, r=20):
     print(out)
     return out
 
+def datmif(m, r=20):
+    infile = r"{}".replace('\\\\', '\\').format(m.get_filename()).replace('/', '\\')
+    outfile = r"{}".replace('\\\\', '\\').replace('/', '\\').format(join(m.path, 'datmif.out')).replace('/', '\\')
+    # pofrfile = r"{}".replace('\\\\', '\\').replace('/', '\\').format(join(m.path, 'ou2pofr.dat')).replace('/', '\\')
+    # fitfile = r"{}".replace('\\\\', '\\').replace('/', '\\').format(join(m.path, 'out2fit.dat')).replace('/', '\\')
+    # out = run_program('datmif', f"'{infile}'", '-o', f"'{outfile}'", '-r', f'{r}')
+    out = run_program('datmif', f"'{infile}'", '-o', f"'{outfile}'", '-r', f'{r}', '--first=1', '--last=2300', '--dmax=140')
+    # out = run_program('out2pofr', f"'{outfile}'", '-o', f"'{pofrfile}'")
+    # out = run_program('out2fit', f"'{outfile}'", '-o', f"'{fitfile}'")
+    print(out)
+    return out
+
 def get_out2fit(m):
     fitfile = r"{}".replace('\\\\', '\\').replace('/', '\\').format(join(m.path, 'out2fit.dat')).replace('/', '\\')
     # df = pd.DataFrame(get_outpath(m, 'out2fit.dat'))
@@ -94,4 +106,16 @@ def bodies(m, rg):
     # outfile = r"{}".replace('\\\\', '\\').replace('/', '\\').format(join(m.path, 'datgnom.out')).replace('/', '\\')
     out = run_program('bodies', f"'{infile}'", '-o', f"'{outfile}'", '--rg=', f"'{rg}'")
     print(out)
+    return out
+
+def dammin(m, rg):
+    """This one would need a GNOMFILE"""
+    out = run_program('dammin')
+    return out
+
+def datft(m, rg):
+    """--dmax is in A
+    --particle-bead-radius is in A
+    it takes forever and easyly gives some integer overflow error."""
+    out = run_program('datft')
     return out
