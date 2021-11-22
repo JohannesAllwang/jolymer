@@ -25,36 +25,49 @@ def get_mo(m, phi, A='A'):
     pass
 
 def write_ALV(m, dfg2, dfI=None):
-    with open(filename) as f:
-        write('ALV-5000/E-WIN Data\n')
-        write(f'Date :	"02.03.20"\n')
-        write(f'Time :	"10:24 AM"\n')
-        write(f'Samplename : 	""\n')
-        write('SampMemo(0) : 	""\n')
-        write('SampMemo(1) : 	""\n')
-        write('SampMemo(2) : 	""\n')
-        write('SampMemo(3) : 	""\n')
-        write('SampMemo(4) : 	""\n')
-        write('SampMemo(5) : 	""\n')
-        write('SampMemo(6) : 	""\n')
-        write('SampMemo(7) : 	""\n')
-        write('SampMemo(8) : 	""\n')
-        write('SampMemo(9) : 	""\n')
-        write(f'Temperature [K] :	     293.20000\n')
-        write(f'Viscosity [cp]  :	       1.15900\n')
-        write('\n')
-        write('"Correlation"\n')
-        for row in dfg2:
-            write('  {}\t  {}\t  {}'.format(
-                q, g2, err_g2
+    filename = join(m.phidls_path, 'test.ASC')
+    with open(filename, 'w') as f:
+        f.write('ALV-5000/E-WIN Data\n')
+        f.write(f'Date :	"00.00.00"\n')
+        f.write(f'Time :	"00:00 AM"\n')
+        f.write(f'Samplename : 	""\n')
+        f.write('SampMemo(0) : 	""\n')
+        f.write('SampMemo(1) : 	""\n')
+        f.write('SampMemo(2) : 	""\n')
+        f.write('SampMemo(3) : 	""\n')
+        f.write('SampMemo(4) : 	""\n')
+        f.write('SampMemo(5) : 	""\n')
+        f.write('SampMemo(6) : 	""\n')
+        f.write('SampMemo(7) : 	""\n')
+        f.write('SampMemo(8) : 	""\n')
+        f.write('SampMemo(9) : 	""\n')
+        f.write('Temperature [K] :	     {:.5f}\n'.format(m.get_TK()))
+        f.write('Viscosity [cp]  :	       {:.5f}\n'.format(1.15900))
+        f.write('Refractive Index:	       1.36100\n')
+        f.write('Wavelength [nm] :	     632.80000\n')
+        f.write('Angle [°]       :	      30.00000\n')
+        f.write('Duration [s]    :	        30.000000\n')
+        f.write('Runs            :	         1\n')
+        f.write('Mode            :	"Pseudo Cross Correlation"\n')
+        f.write('MeanCR0 [kHz]   :	      141.50000\n')
+        f.write('MeanCR1 [kHz]   :	      133.20000\n')
+
+        print('repes_utility.write_ALV gives the viscosity of water to the file...')
+        print('Also time and date are arbitrary')
+        f.write('\n')
+        f.write('"Correlation"\n')
+        for idx, row in dfg2.iterrows():
+            f.write('  {:.5f}\t  {:.5f}\t  {:.5f}'.format(
+                row.t, row.g2, row.err_g2
                 ))
-        write('\n')
-        write('"Count Rate"\n')
-        if not dfI==None:
-            for row in dfI:
-                write('  {}\t  {}\t  {}'.format(
-                t, CRA, CRB
-                ))
+            f.write('\n')
+        f.write('\n')
+        # f.write('"Count Rate"\n')
+        # if not dfI==None:
+            # for row in dfI:
+            #     f.write('  {}\t  {}\t  {}'.format(
+                # t, CRA, CRB
+                # ))
 
 def change_pamet(path, errors='exper.', par1=0, par2=5, par3=1000):
     with open(join(gendist_bin, 'pamet.pam'), 'w') as f:

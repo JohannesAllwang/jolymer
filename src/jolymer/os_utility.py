@@ -24,7 +24,8 @@ def create_path(path):
     except OSError:
         print ("Creation of the directory %s failed" % path)
     else:
-        print ("Successfully created the directory %s " % path)
+        # print ("Successfully created the directory %s " % path)
+        pass
         
 def files(path):
     for file in os.listdir(path):

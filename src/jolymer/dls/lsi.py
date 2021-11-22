@@ -11,10 +11,12 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import os
+from os.path import join
 import matplotlib.pyplot as plt
 from scipy import optimize, constants
 from .. import Sample
 from ..Measurement import Measurement
+from .. import os_utility as osu
 
 
 class lsi(Measurement):
@@ -33,7 +35,10 @@ class lsi(Measurement):
             badangles = list(c.fetchall())
             self.badangles = [phi[1] for phi in badangles]
 
-        self.figures_path = os.path.join(Measurement.figures_path, f'{self.instrument}_{self.id}')
+        self.figures_path = join(Measurement.figures_path, f'{self.instrument}_{self.id}')
+        self.phidls_path  = join(self.figures_path, 'phidls')
+        osu.create_path(self.figures_path)
+        osu.create_path(self.phidls_path)
         try:
             self.continnice = True if 'continnice' in os.listdir(self.figures_path) else False
         except:
@@ -253,6 +258,27 @@ class lsi(Measurement):
         df['err_Ibuf'] = buf.get_sls().err_Isample
         df['I'] = df.Isample - df.Ibuf
         return df
+
+    def get_average_g2(self, phi):
+        seq_numbers = self.phirange(phi)
+        dfout = self.get_data(seq_numbers[0])
+        dfout.g2 = np.zeros_like(dfout.g2)
+        dfout['err_g2'] = np.zeros_like(dfout.g2)
+        dfs = []
+        n = 0
+        for seq_number in seq_numbers:
+            df = self.get_data(seq_number)
+            dfout.g2 += df.g2
+            n += 1
+            dfs.append(df)
+        dfout.g2 = dfout.g2/n
+        n = 0
+        for seq_number in seq_numbers:
+            df = self.get_data(seq_number)
+            dfout.err_g2 += (df.g2 - dfout.g2) ** 2
+            n += 1
+        dfout.err_g2 = np.sqrt(dfout.err_g2 / n)
+        return dfout, dfs
 
 
     def get_fitpar(self, fit, parameter):
