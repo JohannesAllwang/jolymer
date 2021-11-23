@@ -113,6 +113,7 @@ class Cun:
         df_avg = pd.DataFrame(columns = self.phi_columns)
         df_par = pd.DataFrame(columns = self.seq_columns)
         for phi in measurement.angles:
+            print(f'Analyzing angle {phi}')
             df_avg, df_par = self.analyse_phi(measurement, df_avg, df_par, phi)
         # Now linar and constant fits on the qdata:
 

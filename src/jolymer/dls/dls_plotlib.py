@@ -31,18 +31,20 @@ def philabel(m,fit,seq_number):
     phi = m.phifromseq(seq_number)
     return f'{phi} $^\\circ$'
 
-def _dat_compilation(m, seq_numbers, cm, labelfunc, title, ax=None, **kwargs):
+def _dat_compilation(m, seq_numbers, cm, labelfunc, ax=None, **kwargs):
     citer = plu.cm_for_l(cm, seq_numbers)
+    if 'title' in kwargs:
+        title = kwargs.pop('title')
     for s, color in zip(seq_numbers, citer):
         label=labelfunc(m, None, s)
         ax=m.plot_data(s, ax=ax, color=color, label=label, **kwargs)
     ax.legend()
     ax.set_title(title)
     return ax
-def seq_dat(m, seq_numbers):
-    return _dat_compilation(m,  seq_numbers, 'viridis', seqlabel, None)
-def phi_dat(m, seq_numbers):
-    return _dat_compilation(m,  seq_numbers, 'viridis', philabel, None)
+def seq_dat(m, seq_numbers, **kwargs):
+    return _dat_compilation(m,  seq_numbers, 'viridis', seqlabel, **kwargs)
+def phi_dat(m, seq_numbers, kwargs):
+    return _dat_compilation(m,  seq_numbers, 'viridis', philabel, **kwargs)
 
 def _fit_compilation(m, fit, seq_numbers, cm, labelfunc, title, ax=None, showlegend=True, legendargs={}, **kwargs):
     citer = plu.cm_for_l(cm, seq_numbers)
@@ -96,19 +98,26 @@ def _rawdata_page(m, fit, phi, per_plot=5, **kwargs):
                 pass
         seqll.append(seql)
         
-    fig, axes = seq_compilations(m,fit,seqll, title=None)
+    if fit==None:
+        fig, axes = seq_dat(m, seqll, title=None)
+    else:
+        fig, axes = seq_compilations(m,fit,seqll, title=None)
     fig.suptitle(f'$2\\Theta = $ {phi} $^\\circ$')
     plt.tight_layout()   
-def rawdata_pdf(m, fit):
-    filename = os.path.join(m.path, 'rawdata.pdf')
+
+def rawdata_pdf(m, fit=None, filename=None):
+    # filename = os.path.join(m.path, 'rawdata.pdf')
     osu.create_path(m.figures_path)
-    filename = os.path.join(m.figures_path, f'{m.instrument}_{m.id}_{fit.name}_{m.script_row}_T{m.TC}.pdf')
+    fitname = 'nofit' if fit==None else fit.name
+    if filename==None:
+        filename = m.rawdata_filename(fitname)
     with PdfPages(filename) as pdf:
         for phi in m.angles:
             print(phi)
             _rawdata_page(m, fit, phi)
             pdf.savefig()
             plt.close()
+    return filename
             
 def _dist_compilation(m, fit, seq_numbers, cm, labelfunc, title,\
         ax=None, xspace='t', showlegend=True, legendargs={}, **kwargs):

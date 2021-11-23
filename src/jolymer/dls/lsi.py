@@ -100,6 +100,10 @@ class lsi(Measurement):
                 self.get_filename(seq_number))
         return out
 
+    def get_rawdatapdffilename(fitname):
+        out = os.path.join(m.figures_path, f'{fitname}_rawdata.pdf')
+        return out
+
     def get_scriptrow(self, i):
         return self.Tdict[i]
 
