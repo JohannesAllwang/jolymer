@@ -192,7 +192,7 @@ class Ms:
         self.df.to_csv(path)
         return self.df
 
-    def markdown_table(self, **kwargs):
+    def markdown_table(self, fixed_pars=[], e_pars=[], **kwargs):
         out = '| parameter |'
         for m in self.ms:
             out += f'{m.label} |'
@@ -203,7 +203,12 @@ class Ms:
         for par in self.model.parameters:
             out += f'| {par} |'
             for m in self.ms:
-                out += '{:.2f} ± {:.2f} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
+                if par in fixed_pars:
+                    out += '{:.2f} fix |'.format(m.fit_dict[par])
+                elif par in e_pars:
+                    out += '{:.2e} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
+                else:
+                    out += '{:.2f} ± {:.2f} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
             out += '\n'
         return out
 
