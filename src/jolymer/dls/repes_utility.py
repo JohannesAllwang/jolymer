@@ -6,6 +6,8 @@ from os.path import join
 import pandas as pd
 
 gendist_bin = f"C:\\Users\\{getpass.getuser()}\\repes\\gen11\\Genr11\\Basic0.0"
+testpath = f"C:\\Users\\{getpass.getuser()}\\repes\\testdata\\"
+testpath1 = join(testpath, 'Jan20_P123_01')
 
 def get_outpath(m, name):
     outfile = r"{}".replace('\\\\', '\\').replace('/', '\\').format(join(m.path, name)).replace('/', '\\')
