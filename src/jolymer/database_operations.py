@@ -7,7 +7,7 @@ Created on Sun Oct 18 15:07:19 2020
 """
 
 import sqlite3
-import getpass 
+import getpass
 import pandas as pd
 
 
@@ -17,8 +17,11 @@ class dbopen:
     """
     # path = '$HOME/LRZ Sync+Share/master-thesis/database/database.db'
     path = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\database\\database.db"
+    if getpass.getuser() == 'johannes':
+        path = '/home/johannes/LRZ Sync+Share/master-thesis/database/database.db'
     # path = '../../database/database.db'
     print(path)
+
     def __init__(self):
         pass
 
@@ -37,7 +40,7 @@ def execute(query):
         c.execute(query)
         out = c.fetchall()
     return out
-        
+
 def insert_values(table, args):
     qs = "?"
     for arg in range(len(args) -1):
@@ -46,7 +49,7 @@ def insert_values(table, args):
     with dbopen() as c:
         c.execute(query, args)
     return get_table(table)
-        
+
 def get_table(tablename, columns = '*'):
     query = f'SELECT {columns} FROM {tablename};'
     with dbopen() as c:

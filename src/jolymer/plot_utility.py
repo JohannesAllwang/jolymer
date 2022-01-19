@@ -34,7 +34,8 @@ tum_s4 = '#808080'
 tum_s5 = '#cccccc'
 #accent colors
 tum_a1 = '#dad7cb'
-tum_a2 = '#e37222' 
+tum_a2 = '#e37222'
+tum_aorange = '#e37222'
 tum_a3 = '#a2ad00'
 tum_a4 = '#98c6ea'
 tum_a5 = '#64a0c8'
@@ -55,7 +56,7 @@ def alterhex(color):
     return color.replace('#', '0x')
 
 
-    
+
 def colormap(name, start, stop, num):
     cm = plt.get_cmap(name)
     listed = cm(np.linspace(start, stop, num))
@@ -78,7 +79,7 @@ def n_subplots(n, subplot_size=(5, 4)):
     sw, sh = subplot_size
     ncols = min(n, 2)
     nrows = int(np.ceil(n/2))
-    fig, axes = plt.subplots(ncols = ncols, nrows=nrows, 
+    fig, axes = plt.subplots(ncols = ncols, nrows=nrows,
                            squeeze= False, figsize=(sw*ncols, sh*nrows))
     return fig, axes
 def lighten_color(color, amount=0.5):
@@ -105,7 +106,7 @@ tum_blue_to_red = mc.LinearSegmentedColormap.from_list("tum_blue_to_red", [tum_d
 
 class data_linewidth_plot():
 
-    """ 
+    """
     this class is copy pasted from stack overflow
 
     """

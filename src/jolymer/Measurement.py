@@ -13,17 +13,20 @@ import datetime as dt
 path = Path(__file__).parent
 
 class Measurement:
-    
+
     rawdatapath = os.path.join(path, '../../rawdata')
     rawdatapath = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\rawdata\\"
     figures_path = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\figures\\"
-    
+    if getpass.getuser() == 'johannes':
+        rawdatapath = '/home/johannes/LRZ Sync+Share/master-thesis/rawdata/'
+        figures_path = '/home/johannes/LRZ Sync+Share/master-thesis/figures/'
+
     def get_mdt(self):
         "returns date in datetime format and boolean for if time is includet or not"
         year = int(self.datestring[0:4])
         month = int(self.datestring[4:6])
         day = int(self.datestring[6:8])
-        
+
         if self.timestring!= None:
             hour, minute = [int(x) for x in self.timestring.split(':')]
             date = dt.datetime(year, month, day, hour=hour, minute=minute)
