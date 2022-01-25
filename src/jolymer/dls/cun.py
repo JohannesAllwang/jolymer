@@ -35,8 +35,8 @@ class Cun:
         popt, pcov = optimize.curve_fit(fitfunc, df.t, df.g2, bounds=bounds)
         return popt, pcov
 
-    def fit_measurement(self, measurement, seq_number, fitfunc, bounds):
-        df = measurement.get_data(seq_number)
+    def fit_m(self, m, seq_number, fitfunc, bounds):
+        df = m.get_data(seq_number)
         popt, pcov = self.fit_data(df, fitfunc, bounds)
         return popt, pcov
 
@@ -46,19 +46,23 @@ class Cun:
                                         bounds=bounds)
         return popt, pcov
 
-    def get_seqtable(self, measurement):
-        fitpars = dbo.get_table(self.seqs_tablename(measurement))
+    def get_seqtable(self, m):
+        fitpars = dbo.get_table(self.seqs_tablename(m))
         fitpars = fitpars.set_index('seq_number', drop=True)
         return fitpars
 
-    def get_phitable(self, measurement):
-        fitpars = dbo.get_table(self.phis_tablename(measurement))
+    def get_phitable(self, m):
+        fitpars = dbo.get_table(self.phis_tablename(m))
         return fitpars
 
-    def get_fit(self, measurement, seq_number):
-        data = measurement.get_data(seq_number)
+    def get_phidlstable(self, m):
+        fitpars = dbo.get_table(self.phidls_tablename(m))
+        return fitpars
+
+    def get_fit(self, m, seq_number):
+        data = m.get_data(seq_number)
         with dbo.dbopen() as c:
-            query = f"""SELECT * FROM {self.seqs_tablename(measurement)}
+            query = f"""SELECT * FROM {self.seqs_tablename(m)}
                     WHERE seq_number={seq_number}"""
             conn = c.connection
             fitpars = pd.read_sql_query(query, conn)
@@ -67,21 +71,39 @@ class Cun:
         popt = []
         for parameter in self.parameters:
             popt.append(fitpars.loc[seq_number, parameter])
-        qq = measurement.qq(measurement.phifromseq(seq_number))
-        fitfunc = self.create_fitfunc(measurement, qq)
+        qq = m.qq(m.phifromseq(seq_number))
+        fitfunc = self.create_fitfunc(m, qq)
         data['fit'] = fitfunc(data.t, *popt)
         data['res'] = data.g2 - data.fit
         return data
 
-    def analyse_phi(self, measurement, df_avg, df_par, phi):
+    def get_phidlsfit(self, m, phi):
+        data, dfs = m.get_average_g2(phi)
+        with dbo.dbopen() as c:
+            query = f"""SELECT * FROM {self.phidls_tablename(m)}
+                    WHERE phi={phi}"""
+            conn = c.connection
+            fitpars = pd.read_sql_query(query, conn)
+        fitpars = fitpars.set_index('phi', drop=True)
+        popt = []
+        for parameter in self.parameters:
+            popt.append(fitpars.loc[phi, parameter])
+        qq = m.qq(phi)
+        fitfunc = self.create_fitfunc(m, qq)
+        data['fit'] = fitfunc(data.t, *popt)
+        data['res'] = data.g2 - data.fit
+        # print(data)
+        return data
+
+    def analyse_phi(self, m, df_avg, df_par, phi):
         par_list = []
-        qq = measurement.qq(phi)
-        fitfunc = self.create_fitfunc(measurement, qq)
-        bounds = self.create_bounds(measurement, phi)
-        for seq_number in measurement.phirange(phi):
-            if seq_number in measurement.exceptions:
+        qq = m.qq(phi)
+        fitfunc = self.create_fitfunc(m, qq)
+        bounds = self.create_bounds(m, phi)
+        for seq_number in m.phirange(phi):
+            if seq_number in m.exceptions:
                 continue
-            popt, pcov = self.fit_phidls(measurement,
+            popt, pcov = self.fit_phidls(m,
                                          seq_number, fitfunc, bounds)
             std_popt = np.sqrt(np.diag(pcov))
             par_list.append(popt)
@@ -91,19 +113,23 @@ class Cun:
                 dict_par['std_' + parameter] = std_popt[index]
             df_par = df_par.append(dict_par, ignore_index=True)
         dict_avg = {'phi': phi,
-                    'qq': measurement.qq(phi)}
+                    'qq': m.qq(phi)}
         for index, parameter in enumerate(self.parameters):
             dict_avg[parameter] = np.mean([x[index] for x in par_list])
             dict_avg['err_' + parameter] = np.std([x[index] for x in par_list])
         df_avg = df_avg.append(dict_avg, ignore_index=True)
         return df_avg, df_par
 
-    def phis_tablename(self, measurement):
-        out = f"phis_{self.name}_{measurement.id}"
+    def phis_tablename(self, m):
+        out = f"phis_{self.name}_{m.id}"
         return out
 
-    def seqs_tablename(self, measurement):
-        out = f"seqs_{self.name}_{measurement.id}"
+    def seqs_tablename(self, m):
+        out = f"seqs_{self.name}_{m.id}"
+        return out
+
+    def phidls_tablename(self, m):
+        out = f'phidls_{self.name}_{m.id}'
         return out
 
     def get_R(self, m):
@@ -119,12 +145,12 @@ class Cun:
         # return '{0:.2f} ± {1:.2f} nm'.format(R * 1e9, err_R * 1e9)
         return '{0:.2f} $\\pm$ {1:.2f} nm'.format(R * 1e9, err_R * 1e9)
 
-    def analyse(self, measurement):
+    def analyse(self, m):
         df_avg = pd.DataFrame(columns=self.phi_columns)
         df_par = pd.DataFrame(columns=self.seq_columns)
-        for phi in measurement.angles:
+        for phi in m.angles:
             print(f'Analyzing angle {phi}')
-            df_avg, df_par = self.analyse_phi(measurement, df_avg, df_par, phi)
+            df_avg, df_par = self.analyse_phi(m, df_avg, df_par, phi)
         # Now linar and constant fits on the qdata:
 
         dict_avg = {'phi': ['constant', 'y_intercept', 'slope'],
@@ -169,9 +195,9 @@ class Cun:
         df_avg = df_avg.append(ap, ignore_index=True)
         with dbo.dbopen() as c:
             conn = c.connection
-            df_avg.to_sql(self.phis_tablename(measurement), conn,
+            df_avg.to_sql(self.phis_tablename(m), conn,
                           if_exists='replace', index=False)
-            df_par.to_sql(self.seqs_tablename(measurement), conn,
+            df_par.to_sql(self.seqs_tablename(m), conn,
                           if_exists='replace', index=False)
 
     def analyse_phidls(self, m):
@@ -191,10 +217,14 @@ class Cun:
                 dict_par[parameter] = popt[index]
                 dict_par['std_' + parameter] = std_popt[index]
             df_par = df_par.append(dict_par, ignore_index=True)
+        with dbo.dbopen() as c:
+            conn = c.connection
+            df_par.to_sql(self.phidls_tablename(m), conn,
+                          if_exists='replace', index=False)
         return df_par, dflist
 
 
-def c2_create_fitfunc(measurement, qq):
+def c2_create_fitfunc(m, qq):
     def inner(x, Dapp, Dapp2, beta):
         g1 = np.exp(-Dapp*x * qq) * \
             (1 + Dapp2 * qq**2 * x**2 / 2)
@@ -203,9 +233,9 @@ def c2_create_fitfunc(measurement, qq):
     return inner
 
 
-def cu2_create_bounds(measurement, phi):
-    Dmin = measurement.DfromR(measurement.rmax)
-    Dmax = measurement.DfromR(measurement.rmin)
+def cu2_create_bounds(m, phi):
+    Dmin = m.DfromR(m.rmax)
+    Dmax = m.DfromR(m.rmin)
     # Dmin = 0
     # Dmax = 10000
     D2min = 0
@@ -213,9 +243,9 @@ def cu2_create_bounds(measurement, phi):
     # D2max = 1000_000_000_000
     betamin = 0
     betamax = 1.2
-    if measurement.mode == '3dcross':
+    if m.mode == '3dcross':
         betamax = 0.3
-    if measurement.mode == 'mod3d':
+    if m.mode == 'mod3d':
         betamax = 0.9
     return ((Dmin, D2min, betamin), (Dmax, D2max, betamax))
 
