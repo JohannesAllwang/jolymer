@@ -17,12 +17,12 @@ from pathlib import Path
 
 def n_water(T, wl, rho=1000):
     """
-    Thormählen, I. / Straub, J. / Grigull, U. 
-    Refractive Index of Water and Its Dependence on Wavelength, Temperature, and Density 
-    1985-10 
+    Thormählen, I. / Straub, J. / Grigull, U.
+    Refractive Index of Water and Its Dependence on Wavelength, Temperature, and Density
+    1985-10
 
-    Journal of Physical and Chemical Reference Data , Vol. 14, No. 4 
-    AIP Publishing 
+    Journal of Physical and Chemical Reference Data , Vol. 14, No. 4
+    AIP Publishing
     p. 933-945
 
     Args:
@@ -65,14 +65,14 @@ def n_water(T, wl, rho=1000):
 
 def visc_water(TK):
     """
-    Article (Kestin1978Viscosity) 
+    Article (Kestin1978Viscosity)
 
-    Kestin, Joseph / Sokolov, Mordechai / Wakeham, William A. 
-    Viscosity of liquid water in the range -8 textdegreeC to 150 textdegreeC 
-    1978-07 
+    Kestin, Joseph / Sokolov, Mordechai / Wakeham, William A.
+    Viscosity of liquid water in the range -8 textdegreeC to 150 textdegreeC
+    1978-07
 
-    Journal of Physical and Chemical Reference Data , Vol. 7, No. 3 
-    AIP Publishing 
+    Journal of Physical and Chemical Reference Data , Vol. 7, No. 3
+    AIP Publishing
     p. 941-948
     """
 
@@ -98,7 +98,7 @@ class Polymer:
         self.id, self.name, self.short_name, self.comment = values
 
 class Protein:
-    
+
     def __init__(self, id):
         self.type = 'protein'
         with dbo.dbopen() as c:
@@ -109,7 +109,7 @@ class Protein:
             self.pI, self.reference_size, self.comment = values
 
 class Polysaccharide:
-    
+
     def __init__(self, id):
         self.type = 'polysaccharide'
         with dbo.dbopen() as c:
@@ -128,7 +128,7 @@ class Sample:
         year = int(self.datestring[0:4])
         month = int(self.datestring[4:6])
         day = int(self.datestring[6:9])
-        
+
         if self.timestring!= None:
             hour, minute = [int(x) for x in self.timestring.split(':')]
             date = dt.datetime(year, month, day, hour=hour, minute=minute)
@@ -167,7 +167,7 @@ class Sample:
 
 
 class Buffer(Sample):
-    
+
     def __init__(self, id):
         self.type = 'buffer'
         with dbo.dbopen() as c:
@@ -175,13 +175,16 @@ class Buffer(Sample):
             values = c.fetchone()
         self.id, self.name, self.pH, self.salt_name, self.salt_concentration,\
             self.visc, self.n, self.ganesha_id, self.comment = values
-        
+
     def get_viscosity(self, TK):
         if self.id == 0:
             return visc_water(TK)
-        if self.name == 'ETOH':
+        elif self.name == 'ETOH':
             if TK == 293.15:
                 return 1.159
+        else:
+            print('using the viscosity of pure H2O (In the buffer class)')
+            return visc_water(TK)
     def get_n(self, TK, wl):
         if self.id == 0:
             return n_water(TK, wl)
@@ -190,7 +193,7 @@ class Buffer(Sample):
             return n_water(TK, wl)
 
 class pps_Sample(Sample):
-    
+
     def __init__(self, id):
         self.type = 'pps'
         with dbo.dbopen() as c:
@@ -216,19 +219,19 @@ class pps_Sample(Sample):
                 self.treatment_TC = float(temp[0:-3])
             else:
                 print("Treatment temperature like this is not implemented...")
-                    
+
     def get_NPname(self):
         out = f'{self.PS.short_name}/{self.protein.short_name}'
         return out
-    
+
     def get_NPbuffer(self):
         npname = self.get_NPname()
         out = f'{npname} pH {self.buffer.pH}'
         return out
-        
+
 
 class polymer_Sample(Sample):
-    
+
     def __init__(self, id):
         with dbo.dbopen() as c:
             c.execute("SELECT * FROM polymer_samples WHERE id=?", (id,))
@@ -238,7 +241,7 @@ class polymer_Sample(Sample):
         self.polymer = None
         print('polymers are not implemented')
         self.buffer = Buffer(buffer_id)
-        
+
 
 class mix_Sample(Sample):
 
@@ -338,7 +341,7 @@ class TresySample(Sample):
     def get_NPname(self):
         out = f'{self.PS.short_name}/{self.protein.short_name}'
         return out
-        
+
 class TresyBuffer(Sample):
 
     def __init__(self, buffer_id):
@@ -355,7 +358,7 @@ class TresyBuffer(Sample):
         return n_water(TK, wl)
 
 
-            
+
 def get_sample(type, id):
     if type=='pps':
         return pps_Sample(id)

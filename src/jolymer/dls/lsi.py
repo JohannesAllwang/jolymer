@@ -22,7 +22,7 @@ from .. import os_utility as osu
 class lsi(Measurement):
 
     # def __init__(self, )
-    
+
     def __init__(self, lsi_id, instrument='lsi', evaluate_script=True):
         self.instrument = instrument
         with dbo.dbopen() as c:
@@ -203,7 +203,7 @@ class lsi(Measurement):
         gets the summary file as a pandas dataframe
         """
         filename = self.rawdata_filename('')
-        # Scattering angle   Mean_CR * sin(angle) / Laser Intensity (kHz/mW)    
+        # Scattering angle   Mean_CR * sin(angle) / Laser Intensity (kHz/mW)
         # g2(t=0)-1    CR CHA (kHz)    CR CHB (kHz)    Temperature (K)    Laser intensity (mW) Hydrodynamic Radius (nm) Width (nm)
         df = pd.read_csv(filename, sep='\t', skiprows=1, header=None, names=['angle', 'I', 'g20', 'CRA', 'CRB', 'TK', 'I0', 'rh', 'width'])
         # Sequence number is not in the file so we find it from the index:
@@ -290,7 +290,7 @@ class lsi(Measurement):
 
     def get_gammastar(self):
         pass
-    
+
     def phirange(self, phi):
         "returns all the seq_numbers of the argument angle. Exceptions excepted."
         index = np.where(self.allangles == phi)[0]
@@ -311,7 +311,7 @@ class lsi(Measurement):
         for phi in self.allangles:
             if self.seqinphi(seq_number, phi):
                 return phi
-    
+
     def RfromD(self, D):
         TK = self.get_TK()
         visc = self.sample.get_viscosity(TK)
@@ -327,7 +327,7 @@ class lsi(Measurement):
         D = 1 / (qq * t)
         out = self.RfromD(D)
         return out
-    
+
     def DfromR(self, rh):
         TK = self.get_TK()
         out = constants.Boltzmann*TK / \
@@ -340,14 +340,14 @@ class lsi(Measurement):
         n = self.sample.get_n(self.get_TK(), wl)
         out = n *4* np.pi *np.sin((phi*np.pi/360))/wl
         return out
-    
+
     def qq(self, phi):
         "calculates the square of scattering vector q^2[m^-2] from the scattering angle 2\Theta."
         return self.q(phi)**2
 
     def get_visc(self):
         return self.sample.get_viscosity(self.get_TK())
-    
+
     def plot_data(self, seq_number, ax=None, **kwargs):
         """
         This should most likely not be a function of the lsi class.
@@ -371,11 +371,14 @@ class lsi(Measurement):
         if self.mode == 'mod3d':
             ax.set_ylim(0, 0.85)
         return ax
-    
-    def plot_fit(self, seq_number, fit, fitcolor='lightsalmon', ax = None, showres=True, **kwargs):
+
+    def plot_fit(self, seq_number, fit, fitcolor='black', ax=None,
+                 showres=True, **kwargs):
         ax = self.plot_data(seq_number, ax=ax, **kwargs)
+        if fit is None:
+            return ax
         fitdf = fit.get_fit(self, seq_number)
-        fitdf = fitdf[fitdf.fit<1]
+        fitdf = fitdf[fitdf.fit < 1]
         ax.plot(fitdf.t, fitdf.fit, '-', color=fitcolor)
         rescolor=fitcolor
         if 'color' in kwargs:
@@ -399,8 +402,8 @@ class lsi(Measurement):
             ax.plot(dfd.t, dfd.dist, **kwargs)
         ax.set_xscale('log')
         return ax
-    
-    def qplot(self, fit, parameters, function=lambda x:x, 
+
+    def qplot(self, fit, parameters, function=lambda x:x,
               err_function=lambda x,err_x:err_x, ax=None, **kwargs):
         if ax==None:
             fig, ax = plt.subplots()
@@ -410,7 +413,7 @@ class lsi(Measurement):
             kwargs['marker']='o'
         if 'linestyle' not in kwargs:
             kwargs['linestyle']=''
-    
+
         df = fit.get_phitable(self)
         xdata=df.qq
         args = [df[par] for par in parameters]
@@ -424,7 +427,7 @@ class lsi(Measurement):
 class lsi3d(lsi):
 
     instrument = 'lsi3d'
-    
+
     def __init__(self, lsi_id, evaluate_script=True):
         lsi.__init__(self, lsi_id, instrument='lsi3d', evaluate_script=evaluate_script)
 

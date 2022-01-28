@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 import os
+from os.path  import join
 import matplotlib.pyplot as plt
 from scipy import optimize, constants
 from ..Sample import Sample
@@ -55,7 +56,7 @@ def phi_dat(m, seq_numbers, kwargs):
     return _dat_compilation(m,  seq_numbers, 'viridis', philabel, **kwargs)
 
 
-def _fit_compilation(m, fit, seq_numbers, cm, labelfunc, title, ax=None,
+def _fit_compilation(m, seq_numbers, cm, labelfunc, title, ax=None, fit=None,
                      showlegend=True, legendargs={}, **kwargs):
     citer = plu.cm_for_l(cm, seq_numbers)
     for s, color in zip(seq_numbers, citer):
@@ -67,13 +68,17 @@ def _fit_compilation(m, fit, seq_numbers, cm, labelfunc, title, ax=None,
     return ax
 
 
-def plot_phidls(m, phi, fit, fitcolor='black', ax=None, showres=True,
+def plot_phidls(m, phi, fitcolor='black', ax=None, showres=True, fit=None,
                 **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
-    df = fit.get_phidlsfit(m, phi)
-    ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
-    ax.errorbar(df.t, df.fit, color='black')
+    if fit is None:
+        df, dfs = m.get_average_g2(phi)
+        ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
+    else:
+        df = fit.get_phidlsfit(m, phi)
+        ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
+        ax.errorbar(df.t, df.fit, color=fitcolor)
     ax.set_xscale('log')
     rescolor = fitcolor
     if 'color' in kwargs:
@@ -86,24 +91,24 @@ def plot_phidls(m, phi, fit, fitcolor='black', ax=None, showres=True,
     return ax
 
 
-def phidls_compilation(m, fit, phis, cm, ax=None,
+def phidls_compilation(m, phis, cm, ax=None, fit=None,
                        showlegend=True, legendargs={}, **kwargs):
     citer = plu.cm_for_l(cm, phis)
     for phi, color in zip(phis, citer):
         label = f'{phi} $^\\circ$'
-        ax = plot_phidls(m, phi, fit, ax=ax, color=color, label=label, **kwargs)
+        ax = plot_phidls(m, phi, fit=fit, ax=ax, color=color, label=label, **kwargs)
     if showlegend:
         ax.legend(**legendargs)
     # ax.set_title(title)
     return ax
 
 
-def seq_compilation(m, fit, seq_numbers):
-    return _fit_compilation(m, fit, seq_numbers, 'viridis', seqlabel, None)
+def seq_compilation(m, seq_numbers, fit=None):
+    return _fit_compilation(m, seq_numbers, 'viridis', seqlabel, None, fit=fit)
 
 
-def phi_compilation(m, fit, seq_numbers):
-    return _fit_compilation(m, fit, seq_numbers, 'viridis', philabel, None)
+def phi_compilation(m, seq_numbers, fit=None):
+    return _fit_compilation(m, seq_numbers, 'viridis', philabel, None, fit=fit)
 
 
 def _fit_compilations(listofargs, **kwargs):
@@ -116,20 +121,20 @@ def _fit_compilations(listofargs, **kwargs):
         ax.set_xlabel('$\\tau$ [s]')
     axes = axes.flatten()[0:num_plots]
     for args, ax in zip(listofargs, axes):
-        ax=_fit_compilation(*args, ax=ax, **kwargs)
+        ax = _fit_compilation(*args, ax=ax, **kwargs)
     return fig, axes
 
 
-def seq_compilations(m, fit, seqll, cm='viridis', title=None, **kwargs):
+def seq_compilations(m, seqll, fit=None, cm='viridis', title=None, **kwargs):
     listofargs = []
     for seq_numbers in seqll:
-        args = [m, fit, seq_numbers, cm, seqlabel, title]
+        args = [m, seq_numbers, cm, seqlabel, title]
         listofargs.append(args)
-    fig, axes = _fit_compilations(listofargs, **kwargs)
+    fig, axes = _fit_compilations(listofargs, fit=fit, **kwargs)
     return fig, axes
 
 
-def _rawdata_page(m, fit, phi, per_plot=5, **kwargs):
+def _rawdata_page(m, phi, fit=None, per_plot=5, **kwargs):
     seqll = []
     seq_numbers = m.phirange(phi)
     if len(seq_numbers) > 10:
@@ -146,10 +151,7 @@ def _rawdata_page(m, fit, phi, per_plot=5, **kwargs):
                 pass
         seqll.append(seql)
 
-    if fit is None:
-        fig, axes = seq_dat(m, seqll, title=None)
-    else:
-        fig, axes = seq_compilations(m, fit, seqll, title=None)
+    fig, axes = seq_compilations(m, seqll, fit=fit, title=None)
     fig.suptitle(f'$2\\Theta = $ {phi} $^\\circ$')
     plt.tight_layout()
 
@@ -159,17 +161,18 @@ def rawdata_pdf(m, fit=None, filename=None):
     osu.create_path(m.figures_path)
     fitname = 'nofit' if fit is None else fit.name
     if filename is None:
-        filename = m.rawdata_filename(fitname)
+        filename = f'{fitname}.pdf'
+    filename = join(m.figures_path, filename)
     with PdfPages(filename) as pdf:
         for phi in m.angles:
             print(phi)
-            _rawdata_page(m, fit, phi)
+            _rawdata_page(m, phi, fit=fit)
             pdf.savefig()
             plt.close()
     return filename
 
 
-def _dist_compilation(m, fit, seq_numbers, cm, labelfunc, title, ax=None,
+def _dist_compilation(m, seq_numbers, cm, labelfunc, title, ax=None, fit=None,
                       xspace='t', showlegend=True, legendargs={}, **kwargs):
     citer = plu.cm_for_l(cm, seq_numbers)
     for s, color in zip(seq_numbers, citer):
@@ -184,24 +187,24 @@ def _dist_compilation(m, fit, seq_numbers, cm, labelfunc, title, ax=None,
     return ax
 
 
-def dist_seq(m, fit, seq_numbers, xspace='t'):
+def dist_seq(m, seq_numbers, fit=None, xspace='t'):
     fig, (axf, axd) = plt.subplots(nrows=2, figsize=(10, 10))
-    axd = _dist_compilation(m, fit, seq_numbers, 'viridis', seqlabel, None,
+    axd = _dist_compilation(m, seq_numbers, 'viridis', seqlabel, None, fit=fit,
                             ax=axd, xspace=xspace)
-    axf = _fit_compilation(m, fit, seq_numbers, 'viridis', seqlabel,
-                           None, ax=axf)
+    axf = _fit_compilation(m, seq_numbers, 'viridis', seqlabel, None, fit=fit,
+                           ax=axf)
     return fig, (axf, axd)
 
 
-def dist_phi(m, fit, seq_numbers, xspace='t', figsize=(10, 10), xlim=None,
+def dist_phi(m, seq_numbers, xspace='t', figsize=(10, 10), xlim=None, fit=None,
              data_marker='.'):
     fig, (axf, axd) = plt.subplots(nrows=2, figsize=figsize)
-    axd = _dist_compilation(m, fit, seq_numbers, 'viridis', philabel, None,
+    axd = _dist_compilation(m, seq_numbers, 'viridis', philabel, None, fit=fit,
                             ax=axd, xspace=xspace)
     axd.set_ylabel('$\\tau A(\\tau)$ [s]')
     axd.set_xlabel('$\\tau$ [s]')
     axd.set_xlim(xlim)
-    axf = _fit_compilation(m, fit, seq_numbers, 'viridis', philabel, None,
+    axf = _fit_compilation(m, seq_numbers, 'viridis', philabel, None, fit=fit,
                            ax=axf, marker=data_marker)
     axf.set_ylabel('$g_2 - 1$')
     axf.set_xlim(xlim)
@@ -216,7 +219,7 @@ def rh_phi(*args, **kwargs):
     return dist_phi(*args, xspace='rh', **kwargs)
 
 
-def _raw_contin_page(m, fit, phi, per_plot=5, **kwargs):
+def _raw_contin_page(m, phi, fit=None, per_plot=5, **kwargs):
     seqll = []
     seq_numbers = m.phirange(phi)
     for i in range(4):
@@ -230,24 +233,24 @@ def _raw_contin_page(m, fit, phi, per_plot=5, **kwargs):
 
     fig, ((axf1, axf2), (axd1, axd2)) = plt.subplots(nrows=2, ncols=2,
                                                      figsize=(12, 8))
-    axd1 = _dist_compilation(m, fit, m.phirange(phi)[0:5], 'viridis', seqlabel,
-                             None, ax=axd1)
+    axd1 = _dist_compilation(m, m.phirange(phi)[0:5], 'viridis', seqlabel, None, fit=fit,
+                             ax=axd1)
     axd1.set_xlabel('$\\tau $ [s]')
     axd1.set_ylabel('$\\tau \\cdot G(\\tau) $ [s]')
-    axd2 = _dist_compilation(m, fit, m.phirange(phi)[5::], 'viridis', seqlabel,
-                             None, ax=axd2)
+    axd2 = _dist_compilation(m, m.phirange(phi)[5::], 'viridis', seqlabel,
+                             None, fit=fit, ax=axd2)
     axd2.set_xlabel('$\\tau $ [s]')
-    axf1 = _fit_compilation(m, fit, m.phirange(phi)[0:5], 'viridis', seqlabel,
-                            None, ax=axf1)
+    axf1 = _fit_compilation(m, m.phirange(phi)[0:5], 'viridis', seqlabel,
+                            None, fit=fit, ax=axf1)
     axf1.set_ylabel('$g_2 - 1$')
-    axf2 = _fit_compilation(m, fit, m.phirange(phi)[5::], 'viridis', seqlabel,
-                            None, ax=axf2)
+    axf2 = _fit_compilation(m, m.phirange(phi)[5::], 'viridis', seqlabel,
+                            None, fit=fit, ax=axf2)
 
     fig.suptitle(f'$2\\Theta = $ {phi} $^\\circ$ \t $T = $ {m.TC} $^\\circ$C')
     plt.tight_layout()
 
 
-def contin_pdf(m, fit):
+def contin_pdf(m, fit=None):
     # filename = os.path.join(m.path, f'contin_{m.script_row}_T{m.TC}.pdf')
     # filename = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\figures\\contin_pdf\\{m.instrument}{m.id}T{int(round(m.TC))}_{m.script_row}.pdf"
     osu.create_path(m.figures_path)
@@ -256,7 +259,7 @@ def contin_pdf(m, fit):
     with PdfPages(filename) as pdf:
         for phi in m.angles:
             print(phi)
-            _raw_contin_page(m, fit, phi)
+            _raw_contin_page(m, phi, fit=fit)
             pdf.savefig()
             plt.close()
 

@@ -48,24 +48,24 @@ class _peak:
         return False
 
 class Contin(Cun):
-    
+
     def __init__(self, name, parameters, labels):
         self.name = name
         self.parameters = parameters
         self.labels = labels
-        
+
     def get_fitfile(self, m, seq_number):
-        out = os.path.join(m.get_fitpath(self),\
+        out = os.path.join(m.get_fitpath(self),
                 f'fit_{seq_number}.contin')
         return out
 
     def get_distfile(self, m, seq_number):
-        out = os.path.join(m.get_fitpath(self),\
+        out = os.path.join(m.get_fitpath(self),
                 f'dist_{seq_number}.contin')
         return out
 
     def get_rawoutputfile(self, m, seq_number):
-        out = os.path.join(m.get_fitpath(self),\
+        out = os.path.join(m.get_fitpath(self),
                 f'full_output_{seq_number}.contin')
         return out
 
@@ -145,6 +145,7 @@ class Contin(Cun):
     def get_fit(self, m, seq_number):
         df = pd.read_csv(self.get_fitfile(m, seq_number), index_col=(0))
         return df
+
     def get_dist(self, m, seq_number):
         df = pd.read_csv(self.get_distfile(m, seq_number), index_col=(0))
         return df
@@ -188,7 +189,7 @@ class Contin(Cun):
             dict_avg['err_' + parameter] = np.std([x[index] for x in par_list])
         df_avg = df_avg.append(dict_avg, ignore_index=True)
         return df_avg, df_par, peaks_dict
-    
+
     def phis_tablename(self, m):
         out = f"phis_{self.name}_{m.name}"
         return out
@@ -200,7 +201,7 @@ class Contin(Cun):
     def peaks_tablename(self, m):
         out = f"peaks_{self.name}_{m.name}"
         return out
-    
+
     def analyse(self, m):
         osu.create_path(m.get_fitpath(self))
         df_avg = pd.DataFrame(columns = parameters)
@@ -227,14 +228,14 @@ class Contin(Cun):
                 pstd = [None]
             constant = popt[0]
             err_constant = pstd[0]
-            
+
             # Linear fit:
             def func(qq, D0, D0chrg2):
                 out = D0*np.ones(len(qq)) + D0chrg2*qq
                 return out
             try:
                 popt, pcov = optimize.curve_fit(func, df_avg.qq, df_avg[par],
-                                    sigma=df_avg[f'err_{par}'], 
+                                    sigma=df_avg[f'err_{par}'],
                                     bounds=((-np.inf,-np.inf), (np.inf, np.inf)))
                 pstd = np.sqrt(np.diag(pcov))
             except Exception as e:
@@ -243,7 +244,7 @@ class Contin(Cun):
                 pstd = [None, None]
             yintercept, slope = popt
             err_yintercept, err_slope = pstd
-            
+
             dict_avg[par] = [constant, yintercept, slope]
             dict_avg['err_'+par] = [err_constant, err_yintercept, err_slope]
         ap = pd.DataFrame(dict_avg)
@@ -253,6 +254,40 @@ class Contin(Cun):
             df_avg.to_sql(self.phis_tablename(m), conn, if_exists='replace')
             df_par.to_sql(self.seqs_tablename(m), conn, if_exists='replace')
             df_peaks.to_sql(self.peaks_tablename(m), conn, if_exists='replace')
+
+    def analyse_phidls(self, m):
+        osu.create_path(m.get_phidls_path(self))
+        df_avg = pd.DataFrame(columns=parameters)
+        df_par = pd.DataFrame(columns=parameters)
+        peaks_dict = {'seq_number': [],
+                      'from': [],
+                      'to': []}
+        # for phi in m.angles:
+        #     df_avg, df_par, peaks_dict = self.analyse_phi(m, df_avg, df_par, peaks_dict, phi)
+        # df_peaks = pd.DataFrame(peaks_dict)
+        # dict_avg ={'phi' : ['constant', 'y_intercept', 'slope'],
+        #            'qq' : [-1, -1, -1]}
+        # for index, par in enumerate(self.parameters[1::]):
+        #     # Constant fit:
+        #     def func(qq, Davg):
+        #         return Davg * np.ones(len(qq))
+        #     popt, pcov = [[None], [None]]
+        #     try:
+        #         popt, pcov = optimize.curve_fit(func, df_avg.qq, df_avg[par],
+        #                             sigma=df_avg[f'err_{par}'], bounds=(-np.inf ,np.inf))
+        #         pstd = np.sqrt(np.diag(pcov))
+        #     except Exception as e:
+        #         print(e)
+        #         pstd = [None]
+        #     constant = popt[0]
+        #     err_constant = pstd[0]
+
+        #     # Linear fit:
+        #     def func(qq, D0, D0chrg2):
+        #         out = D0*np.ones(len(qq)) + D0chrg2*qq
+        #         return out
+        #     try:
+        #         popt, pcov = optimize.curve_fit(func, df_avg.qq, df_avg[par],
 
     def get_peaks(self, m, seq_number):
         dfd = self.get_dist(m, seq_number)
