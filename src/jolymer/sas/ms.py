@@ -8,6 +8,7 @@ from scipy import optimize, constants
 from ..Sample import Sample
 from .. import plot_utility as plu
 from . import sas_plotlib as splu
+from .beaucage import beaucage
 
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -17,55 +18,53 @@ class Ms:
         self.ms = ms
         self.model = ms[0].model
 
-
-    def fits(self, fits=True, shiftby=1, **kwargs):
+    def make_plot(self, **kwargs):
         if 'ax' in kwargs:
             ax = kwargs.pop('ax')
         else:
-            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4), 
-                                     sharex=True, sharey=True, squeeze=True)
+            fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(5, 4),
+                                   sharex=True, sharey=True, squeeze=True)
         if 'ylim' in kwargs:
-            ylim=kwargs.pop('ylim')
-        else:
-            ylim = [None, None]
-        if 'topleft' in kwargs:
-            topleft = kwargs.pop('topleft')
-        else:
-            topleft=''
-        # shiftby = 0.07 if fits else 1
-        # shift= 20**len(self.ms)
+            ylim = kwargs.pop('ylim')
+            ax.set_ylim(*ylim)
+        if 'xlim' in kwargs:
+            xlim = kwargs.pop('xlim')
+            ax.set_xlim(*xlim)
+        return ax, kwargs
+
+    def fits(self, fits=True, shiftby=1, dataqmin=0, dataqmax=2300, **kwargs):
+        ax, kwargs = self.make_plot(**kwargs)
         shift = shiftby**len(self.ms)
         for m in self.ms:
-            m.fit_dict, m.fit_df = m.model.fit(m, bounds=m.bounds, iqmax=m.iqmax,
-                                p0=m.p0, iqmin=m.iqmin, fixed_parameters=m.fixed_pars)
-            title = f'c({m.sample.PS.short_name})={m.sample.PS_gpl} c(TRY)'
-            df = m.get_data(cout=False)[m.iqmin:m.iqmax]
-            ax.errorbar(df.q, df.I * shift, df.err_I * shift, marker = m.marker, color=m.color,
-                            linestyle='', label = m.label, elinewidth=0.2, **kwargs)
+            dfall = m.get_data(cout=False)
+            df = dfall[dataqmin: dataqmax]
+            ax.errorbar(df.q, df.I * shift, df.err_I * shift, marker=m.marker,
+                        color=m.color,
+                        linestyle='', label=m.label, elinewidth=0.2, **kwargs)
+            df = dfall[m.iqmin: m.iqmax]
             if fits:
-                ax.errorbar(m.fit_df.q, m.fit_df.fit*shift, marker='', color='black')
+                m.fit_dict, m.fit_df = m.model.fit(m, bounds=m.bounds,
+                                                   iqmax=m.iqmax, p0=m.p0,
+                                                   iqmin=m.iqmin,
+                                                   fixed_parameters=m.fixed_pars)
+                ax.errorbar(m.fit_df.q, m.fit_df.fit*shift, marker='',
+                            color='black')
+                m.partext = m.model.get_text(m.fit_dict)
             shift = shift / shiftby
-            m.partext=m.model.get_text(m.fit_dict)
         ax.set_xscale('log')
         ax.set_yscale('log')
-        ax.legend(fontsize = 'x-small')
-        ax.set_ylim(*ylim)
-        # ax.grid()
-            
+        ax.legend(fontsize='x-small')
         ax.set_xlabel('$q$ [1/nm]')
         ax.set_ylabel('$I$ [1/cm]')
-        if fits:
-            ax.set_ylabel('Intensity [1/cm] shifted')
-            text = '$I(q) = I_{Beaucage}(q) + I_F$'
-        ax.annotate(topleft, xy=(.1, .9), xycoords='axes fraction')
-    #         ax.annotate(text, xy=(.1, .1), 
-    #             xycoords='axes fraction')
+
+    def data(self, shiftby=1, **kwargs):
+        return self.fits(fits=False, shiftby=shiftby, **kwargs)
 
     def res(self, **kwargs):
         if 'ax' in kwargs:
             ax = kwargs.pop('ax')
         else:
-            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4), 
+            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4),
                                      sharex=True, sharey=True, squeeze=True)
         if 'ylim' in kwargs:
             ylim=kwargs.pop('ylim')
@@ -79,25 +78,17 @@ class Ms:
             ydata = df.res/df.err_I
             ax.plot(df.q, ydata, marker = m.marker, color=m.color,
                             linestyle='', label = label, **kwargs)
-        ax.legend(fontsize = 'xx-small')
+        ax.legend(fontsize='xx-small')
         ax.set_ylabel('Normalized Residuals')
-        ax.set_xlabel('$q\\mathrm{\,[nm^{-1}]}$')
+        ax.set_xlabel('$q\\mathrm{\\,[nm^{-1}]}$')
 
     def kratky(self, **kwargs):
-        if 'ax' in kwargs:
-            ax = kwargs.pop('ax')
-        else:
-            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4), 
-                                     sharex=True, sharey=True, squeeze=True)
-        if 'ylim' in kwargs:
-            ylim=kwargs.pop('ylim')
-        else:
-            ylim = [None, None]
+        ax, kwargs = self.make_plot(**kwargs)
         for m in self.ms:
             df = m.get_data(cout=False)[m.iqmin:m.iqmax]
-            label = ''
-            ax.errorbar(df.q, df.q**2 * df.I * 1000,  marker = m.marker, color=m.color,
-                            linestyle='', label = label, elinewidth=0.2)
+            label = m.label
+            ax.errorbar(df.q, df.q**2 * df.I * 1000,  marker=m.marker, color=m.color,
+                        linestyle='', label=label, elinewidth=0.2, **kwargs)
             ax.legend()
             #             ax.annotate(m.partext, xy=(0.0, 0.0), xycoords='axes fraction')
             # ax.grid()
@@ -105,16 +96,33 @@ class Ms:
             ax.set_xlim(0, 2.5)
             ax.set_xlabel('$q$ [1/nm]')
             #         axes[0][1].set_xlabel('$q$ [1/nm]')
-            ax.set_ylabel('$I\cdot q^2 \mathrm{\,[0.001nm^{-2}cm^{-1}]}$')
-            text = 'Kratky plots'
-            ax.annotate(text, xy=(.6, .8), xycoords='axes fraction')
+            ax.set_ylabel('$I\\cdot q^2 \\mathrm{\\,[0.001nm^{-2}cm^{-1}]}$')
+
+    def q3I(self, **kwargs):
+        ax, kwargs = self.make_plot(**kwargs)
+        for m in self.ms:
+            df = m.get_data(cout=False)[m.iqmin:m.iqmax]
+            label = m.label
+            ax.errorbar(df.q, df.q**3 * df.I,  marker=m.marker, color=m.color,
+                        linestyle='', label=label, elinewidth=0.2, **kwargs)
+            ax.legend()
+            #             ax.annotate(m.partext, xy=(0.0, 0.0), xycoords='axes fraction')
+            # ax.grid()
+            ax.set_ylim(0,0.0025)
+            ax.set_xlim(0, 0.6)
+            ax.set_xlabel('$q$ [1/nm]')
+            #         axes[0][1].set_xlabel('$q$ [1/nm]')
+            ax.set_ylabel('$I\\cdot q^3 \\mathrm{\\,[nm^{-3}cm^{-1}]}$')
+
+    def debye(self, **kwargs):
+        pass
 
     def dfits(self, fits=True, shiftby=1, **kwargs):
         shift = shiftby**len(self.ms)
         if 'ax' in kwargs:
             ax = kwargs.pop('ax')
         else:
-            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4), 
+            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4),
                                      sharex=True, sharey=True, squeeze=True)
         if 'ylim' in kwargs:
             ylim=kwargs.pop('ylim')
@@ -137,7 +145,7 @@ class Ms:
                 # label = '{}'.format(
                 #     phtext, m.lowq_fitdict['chi2'], m.highq_fitdict['chi2'],
                 # )
-            
+
             ax.loglog(df.q, df.I*shift, marker=m.marker, label=m.label, color=m.color, linestyle='', **kwargs)
             if fits:
                 ax.loglog(m.highq_fitdf.q, m.highq_fitdf.fit*shift, marker='', color='black')
@@ -158,7 +166,7 @@ class Ms:
         if 'ax' in kwargs:
             ax = kwargs.pop('ax')
         else:
-            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4), 
+            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4),
                                      sharex=True, sharey=True, squeeze=True)
         if 'ylim' in kwargs:
             ylim=kwargs.pop('ylim')
@@ -203,14 +211,26 @@ class Ms:
         for par in self.model.parameters:
             out += f'| {par} |'
             for m in self.ms:
-                if par in fixed_pars:
-                    out += '{:.2f} fix |'.format(m.fit_dict[par])
+                print(m.fit_dict[f'std_{par}'])
+                if m.fit_dict[f'std_{par}'] == 'fixed':
+                    out += '{:.2e} fix |'.format(m.fit_dict[par])
                 elif par in e_pars:
+                    print(m.fit_dict[f'std_{par}'])
                     out += '{:.2e} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
                 else:
                     out += '{:.2f} ± {:.2f} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
             out += '\n'
+        if 'beaucage_scale' in self.model.parameters:
+            out += f'| beaucage_C |'
+            for m in self.ms:
+                out += '{:.2e} |'.format(beaucage.get_C(m.fit_dict['beaucage_scale'],
+                                                        m.fit_dict['beaucage_rg'],
+                                                        m.fit_dict['beaucage_exp']))
+            out += '\n'
         return out
+
+    def markdown_sasview(self):
+        pass
 
     def markdown_latex_table(self, **kwargs):
         out = '| parameter |'

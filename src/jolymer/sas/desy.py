@@ -36,7 +36,7 @@ class Desy(SAXS_Measurement):
         osu.create_path(m.buffer_absolute_path)
         unsorted_path = os.path.join(m.rawdatapath, f'desy{m.datestring}')
         osu.create_path(unsorted_path)
-    
+
     def __init__(self, desy_id, issetup=False, cout=True, **kwargs):
         with dbo.dbopen() as c:
             c.execute("SELECT * FROM desy_measurements WHERE id=?;", (desy_id,))
@@ -58,13 +58,13 @@ class Desy(SAXS_Measurement):
         self.buffer_frames_path = os.path.join(self.path,'buffer', 'frames')
         self.buffer_absolute_path = os.path.join(self.path,'buffer', 'absolute')
         self.origpath = os.path.join(self.rawdatapath, f'desy{self.datestring}', 'datacollection', 'data', 'absolute')
-        # get the path of the 
+        # get the path of the
 
     def get_parameter(self, parstring):
         with open(self.get_filename()) as f:
             for line in f:
                 if line.split(':')[0] == parstring:
-                    return line.split(':')[1] 
+                    return line.split(':')[1]
 
     def get_TC(self):
         """
@@ -74,7 +74,7 @@ class Desy(SAXS_Measurement):
 
     def get_notparent_fullpaths(self):
         path = self.absolute_path
-        parents = os.listdir(path) 
+        parents = os.listdir(path)
         nums = []
         for parent in parents:
             num = parent.split('_')[1]
@@ -115,7 +115,7 @@ class Desy(SAXS_Measurement):
                      delimiter='\s+', nrows = 2652)
             out.append(df)
         return out
-    
+
     def get_absolute_dfs(self, buf=False):
         out=[]
         path=self.absolute_path
@@ -149,7 +149,7 @@ class Desy(SAXS_Measurement):
 
     def get_filename(self):
         return os.path.join(self.path, 'processed_subtracted.dat')
-        
+
     def get_data(self, cout=True, altername='No', nrows=2653):
         "get data from data.csv and apply some filter."
         # path = os.path.join(self.path, 'data.csv')
@@ -171,7 +171,11 @@ class Desy(SAXS_Measurement):
         if cout:
             print(f'{len_before-len_after} excluded I values!')
         return df
-    
+
+    def get_bumpsmodel(self, modelname):
+        out = ''
+        return out
+
     def plot_data(self, label=None, scale=1, buf=False, **kwargs):
         "plots data"
         df = self.get_data()
@@ -201,10 +205,10 @@ class Desy(SAXS_Measurement):
         else:
             linestyle=''
 
-        markers, caps, bars = ax.errorbar(df.q, df.I * scale, df.err_I * scale, marker = marker, 
+        markers, caps, bars = ax.errorbar(df.q, df.I * scale, df.err_I * scale, marker = marker,
                     linestyle=linestyle, label = label, elinewidth=0.2,  **kwargs)
         # [bar.set_alpha(0.2) for bar in bars]
-        
+
         ax.set_xscale('log')
         ax.set_yscale('log')
         return ax

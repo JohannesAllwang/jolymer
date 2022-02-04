@@ -14,14 +14,14 @@ from .. import database_operations as dbo
 
 
 class SAXS_Model:
-    
+
     def __init__(self, name, longname, parameters, pardict, fitfunc):
         self.name = name
         self.longname = longname
         self.parameters = parameters
         self.fitfunc = fitfunc
         self.pardict = pardict
-    
+
     def fit(self, measurement, X = 'q', Y = 'I', **kwargs):
         """
         fits the model and returns a dictionary
@@ -62,7 +62,7 @@ class SAXS_Model:
         if 'qmax' in kwargs:
             qmax = kwargs['qmax']
             iqmax = np.where(np.diff(np.sign(df.q - qmax)))[0][0]
-        
+
         _pfit = []
         _pfix = []
         if 'fixed_parameters' in kwargs:
@@ -73,7 +73,7 @@ class SAXS_Model:
                     _pfit.append(par)
         else:
             _pfit = self.parameters
-        
+
         bounds = (-np.inf, np.inf)
         if 'bounds' in kwargs:
             bounds= [[], []]
@@ -93,17 +93,17 @@ class SAXS_Model:
                     _p0.append(kwargs['p0'][par])
                 else:
                     _p0.append(0)
-            
+
         df = df[iqmin : iqmax + 1]
-        popt, pcov = optimize.curve_fit(fitfunc, df.q, df.I, sigma = df.err_I, 
+        popt, pcov = optimize.curve_fit(fitfunc, df.q, df.I, sigma = df.err_I,
                                         p0 = _p0, bounds=bounds)
         pstd = np.sqrt(np.diag(pcov))
         normalized_pcov = pcov / np.outer(pstd, pstd)
       #  print('normalized covariance matrix:', normalized_pcov)
         df['fit'] = fitfunc(df.q, *popt)
         df['res'] = df.fit - df.I
-        chi2 = np.sum(((df.fit - df.I) / df.err_I)**2 / 
-                                 (len(df) - len(_pfit))) 
+        chi2 = np.sum(((df.fit - df.I) / df.err_I)**2 /
+                                 (len(df) - len(_pfit)))
         fit_dict = {'iqmin':iqmin, 'iqmax':iqmax}
         for i, p in enumerate(self.parameters):
             if p in _pfix:
@@ -117,10 +117,10 @@ class SAXS_Model:
         # fit_dict['normalized_pcov'] = normalized_pcov
         fit_dict['measurement'] = measurement
         return fit_dict, df
-    
-    
+
     def fix_parameters(self, parameters):
-        func=self.fitfunc
+        func = self.fitfunc
+
         def inner(*args):
             inner_args = [args[0]]
             i = 1
@@ -129,16 +129,15 @@ class SAXS_Model:
                     inner_args.append(parameters[parameter])
                 else:
                     inner_args.append(args[i])
-                    i+=1
+                    i += 1
             return func(*inner_args)
         return inner
-    
+
     @staticmethod
     def plot_fit(fit_df, figure, scale = 1, **kwargs):
-        
         fig, ax = figure
-        
         ax.errorbar(fit_df.q, fit_df.fit * scale, **kwargs)
+        return ax
 
     def plusmodel(self, model, **kwargs):
         "TODO"
@@ -146,12 +145,12 @@ class SAXS_Model:
             name = kwargs['name']
         else:
             name = f'{self.name}'
-        
+
         if 'longname' in kwargs:
             longname = kwargs['longname']
         else:
             longname = f'{self.longname}'
-        
+
         for par in self.parameters:
             if par in model.parameters:
                 raise Exception("Model parameters need to have different names.")
@@ -182,6 +181,16 @@ class SAXS_Model:
 
     def get_text(self, fit_dict={}):
         return ''
+
+    def plot_I(self, xdat, pars, ax=None, **kwargs):
+        ydat = self.fitfunc(xdat, *pars)
+        ax.plot(xdat, ydat, **kwargs)
+        return ax
+
+    def plot_q3I(self, xdat, pars, ax=None, **kwargs):
+        ydat = self.fitfunc(xdat, *pars)
+        ax.plot(xdat, ydat * xdat ** 3, **kwargs)
+        return ax
 
 class Background(SAXS_Model):
 
@@ -220,7 +229,7 @@ bg = Background()
 
 def par_from_measurement():
     pass
-    
+
 def combine_fitresults(fitdicts):
     out = {}
     for fitdict in fitdicts:

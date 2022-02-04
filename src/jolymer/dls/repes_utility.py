@@ -26,10 +26,11 @@ def make_average_ALV(m):
 def get_mo(m, phi, A='A'):
     pass
 
-def write_ALV(m, dfg2, dfI=None):
-    filename = join(m.phidls_path, 'test.ASC')
+def write_ALV(m, dfg2, dfI=None, filename=None):
+    if filename is None:
+        filename = join(m.phidls_path, 'test.ASC')
     with open(filename, 'w') as f:
-        f.write('ALV-5000/E-WIN Data\n')
+        f.write('ALV-6000/E-WIN Data\n')
         f.write(f'Date :	"00.00.00"\n')
         f.write(f'Time :	"00:00 AM"\n')
         f.write(f'Samplename : 	""\n')
@@ -59,8 +60,15 @@ def write_ALV(m, dfg2, dfI=None):
         f.write('\n')
         f.write('"Correlation"\n')
         for idx, row in dfg2.iterrows():
-            f.write('  {:.5f}\t  {:.5f}\t  {:.5f}'.format(
-                row.t, row.g2, row.err_g2
+            f.write('  {:.5f}\t  {:.5f}'.format(
+                row.t, row.g2
+                ))
+            f.write('\n')
+        f.write('\n')
+        f.write('"StandardDeviation"\n')
+        for idx, row in dfg2.iterrows():
+            f.write('  {:.5f}\t  {:.5f}'.format(
+                row.t, row.err_g2
                 ))
             f.write('\n')
         f.write('\n')

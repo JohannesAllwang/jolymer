@@ -75,7 +75,7 @@ def beaucage_function(q, Rg, G, d):
 
 
 class Beaucage(sasmodel.SAXS_Model):
-    
+
     def __init__(self):
         self.name = 'beaucage'
         self.longname = 'Beaucage'
@@ -90,11 +90,15 @@ class Beaucage(sasmodel.SAXS_Model):
         $A =$ {4:.2E}
         $\\chi^2 = $ {6:.4}
         """.format(fit_dict['beaucage_rg'], fit_dict['std_beaucage_rg'],
-                   fit_dict['beaucage_exp'], fit_dict['std_beaucage_exp'], 
+                   fit_dict['beaucage_exp'], fit_dict['std_beaucage_exp'],
                    fit_dict['beaucage_scale'], fit_dict['std_beaucage_scale'],
                   fit_dict['chi2'])
         return text
-        
+
+    def get_C(self, G, Rg, d):
+        C = G * d / Rg ** d * (6 * d ** 2 / ((2. + d) * (2. + 2. * d))) ** (d / 2.) * special.gamma(d / 2.)
+        return C
+
 beaucage = Beaucage()
 
 bg = sasmodel.Background()
@@ -106,7 +110,7 @@ def get_text_be(fit_dict):
         $G =$ {4:.2E}
         $\\chi^2 = $ {5:.4}
         """.format(fit_dict['beaucage_rg'], fit_dict['std_beaucage_rg'],
-                   fit_dict['beaucage_exp'], fit_dict['std_beaucage_exp'], 
+                   fit_dict['beaucage_exp'], fit_dict['std_beaucage_exp'],
                    fit_dict['beaucage_scale'],
                    fit_dict['chi2'])
         return text
@@ -126,7 +130,7 @@ def get_text_bef(fit_dict):
         $bg = $ {9:.2E}
         $\\chi^2 = $ {8:.4}
         """.format(fit_dict['Rg'], fit_dict['std_Rg'],
-                   fit_dict['beaucage_exp'], fit_dict['std_beaucage_exp'], 
+                   fit_dict['beaucage_exp'], fit_dict['std_beaucage_exp'],
                    fit_dict['fw_exp'], fit_dict['std_fw_exp'],
                    fit_dict['beaucage_scale'], fit_dict['fw_scale'],
                   fit_dict['chi2'],
