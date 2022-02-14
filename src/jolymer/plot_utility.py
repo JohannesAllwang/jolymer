@@ -52,6 +52,12 @@ tum_colors = [
     tum_red,
     tum_dred]
 
+
+def loglog(ax):
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+
+
 def alterhex(color):
     return color.replace('#', '0x')
 

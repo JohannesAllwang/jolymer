@@ -66,12 +66,6 @@ def beaucage_function(q, Rg, G, d):
             http://dx.doi.org/10.1107/S0021889810033856
 
     """
-    q = np.atleast_1d(q)
-    Rg = float(Rg)
-    C = G * d / Rg ** d * (6 * d ** 2 / ((2. + d) * (2. + 2. * d))) ** (d / 2.) * special.gamma(d / 2.)
-    I = G * np.exp(-q ** 2 * Rg ** 2 / 3.) + C / q ** d * (special.erf(q * Rg / 6 ** 0.5)) ** (3 * d)
-    I[q == 0] = 1
-    return I
 
 
 class Beaucage(sasmodel.SAXS_Model):

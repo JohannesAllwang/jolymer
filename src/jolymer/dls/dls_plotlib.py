@@ -6,7 +6,6 @@ Created on Tue Dec 29 16:26:57 2020
 """
 import getpass
 
-
 from .. import database_operations as dbo
 import pandas as pd
 import numpy as np
@@ -19,6 +18,7 @@ from ..Sample import Sample
 from .. import plot_utility as plu
 # from .DLS_Measurement import DL
 from .. import os_utility as osu
+from ..Measurement import Measurement
 
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -75,6 +75,7 @@ def plot_phidls(m, phi, fitcolor='black', ax=None, showres=True, fit=None,
     if fit is None:
         df, dfs = m.get_average_g2(phi)
         ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
+        showres = False
     else:
         df = fit.get_phidlsfit(m, phi)
         ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
@@ -103,8 +104,10 @@ def phidls_compilation(m, phis, cm, ax=None, fit=None,
     return ax
 
 
-def seq_compilation(m, seq_numbers, fit=None):
-    return _fit_compilation(m, seq_numbers, 'viridis', seqlabel, None, fit=fit)
+def seq_compilation(m, seq_numbers, fit=None, **kwargs):
+    print(fit)
+    return _fit_compilation(m, seq_numbers, 'viridis', seqlabel, None, fit=fit,
+                            **kwargs)
 
 
 def phi_compilation(m, seq_numbers, fit=None):
@@ -159,10 +162,11 @@ def _rawdata_page(m, phi, fit=None, per_plot=5, **kwargs):
 def rawdata_pdf(m, fit=None, filename=None):
     # filename = os.path.join(m.path, 'rawdata.pdf')
     osu.create_path(m.figures_path)
-    fitname = 'nofit' if fit is None else fit.name
+    # fitname = 'nofit' if fit is None else fit.name
     if filename is None:
-        filename = f'{fitname}.pdf'
-    filename = join(m.figures_path, filename)
+        filename = join(Measurement.figures_path, 'temp.pdf')
+    else:
+        filename = join(m.figures_path, filename)
     with PdfPages(filename) as pdf:
         for phi in m.angles:
             print(phi)
@@ -250,12 +254,14 @@ def _raw_contin_page(m, phi, fit=None, per_plot=5, **kwargs):
     plt.tight_layout()
 
 
-def contin_pdf(m, fit=None):
+def contin_pdf(m, fit=None, filename=None):
     # filename = os.path.join(m.path, f'contin_{m.script_row}_T{m.TC}.pdf')
     # filename = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\figures\\contin_pdf\\{m.instrument}{m.id}T{int(round(m.TC))}_{m.script_row}.pdf"
+    # filename = os.path.join(m.figures_path,
+                # f'{m.instrument}_{m.id}_{fit.name}_{m.script_row}_T{m.TC}.pdf')
+    if filename is None:
+        filename = join(Measurement.figures_path, 'temp.pdf')
     osu.create_path(m.figures_path)
-    filename = os.path.join(m.figures_path,
-                f'{m.instrument}_{m.id}_{fit.name}_{m.script_row}_T{m.TC}.pdf')
     with PdfPages(filename) as pdf:
         for phi in m.angles:
             print(phi)

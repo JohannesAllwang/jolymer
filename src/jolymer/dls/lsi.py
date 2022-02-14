@@ -239,7 +239,7 @@ class lsi(Measurement):
             Isamples = []
             for seq in self.phirange(angle):
                 # g20s.append(float(df_summary.loc[df_summary.seq_number == seq].g20))
-                print(df_summary.loc[df_summary.seq_number == seq].CRA)
+                # print(df_summary.loc[df_summary.seq_number == seq].CRA)
                 CRAs.append(float(df_summary.loc[df_summary.seq_number == seq].CRA))
                 CRBs.append(float(df_summary.loc[df_summary.seq_number == seq].CRB))
                 I0s.append(float(df_summary.loc[df_summary.seq_number == seq].I0))
