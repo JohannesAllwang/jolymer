@@ -24,15 +24,14 @@ tum_red = '#c4071b'
 tum_dred = '#9c0d16'
 # primary colors
 tum_p1 = '#0065bd'
-tum_p2 = '#ffffff'
-tum_p3 = '#000000'
+tum_blue = '#0065bd'
 # secondary colors:
-tum_s1 = '#005293'
-tum_s2 = '#003359'
+tum_dblue = '#005293'
+tum_ddblue = '#003359'
 tum_s3 = '#333333'
 tum_s4 = '#808080'
 tum_s5 = '#cccccc'
-#accent colors
+# accent colors
 tum_a1 = '#dad7cb'
 tum_a2 = '#e37222'
 tum_aorange = '#e37222'
@@ -79,7 +78,18 @@ def fromto_colormap(color1, color2, sth):
 # newcolors = np.vstack((top(np.linspace(0, 1, 128)),
                        # bottom(np.linspace(0, 1, 128))))
 
-tum_blue_white_red = mc.LinearSegmentedColormap.from_list("tum_blue_to_red", [tum_dred, 'white', tum_s1])
+tum_dblue_white_dred = mc.LinearSegmentedColormap.from_list("tum_blue_to_red", [tum_dred, 'white', tum_dblue])
+tum_blue_white_red = mc.LinearSegmentedColormap.from_list("tum_blue_to_red", [tum_red, 'white', tum_blue])
+
+
+def colorgradient(name, colors, num):
+    lscm = mc.LinearSegmentedColormap.from_list(name, colors)
+    listed = lscm(np.linspace(0, 1, num))
+    out = iter(listed)
+    return out
+
+
+
 
 def n_subplots(n, subplot_size=(5, 4)):
     sw, sh = subplot_size
@@ -105,10 +115,22 @@ def lighten_color(color, amount=0.5):
     c = colorsys.rgb_to_hls(*mc.to_rgb(c))
     return colorsys.hls_to_rgb(c[0], 1 - amount * (1 - c[1]), c[2])
 
+
+tum_lblue = lighten_color(tum_blue, amount=0.7)
+tum_lpurple = lighten_color(tum_purple, amount=0.7)
+tum_lcyan = lighten_color(tum_cyan, amount=0.7)
+tum_lgreen = lighten_color(tum_green, amount=0.7)
+tum_lyellow = lighten_color(tum_yellow, amount=0.7)
+tum_ldyellow = lighten_color(tum_dyellow, amount=0.7)
+tum_lorange = lighten_color(tum_orange, amount=0.7)
+tum_lred = lighten_color(tum_red, amount=0.7)
+tum_ldred = lighten_color(tum_dred, amount=0.7)
+
 tum_blues = mc.ListedColormap(
-        [tum_s1, lighten_color(tum_s1, 0.8), lighten_color(tum_s1, 0.5), lighten_color(tum_s1, 0.2)]
+        [tum_dblue, lighten_color(tum_dblue, 0.8), lighten_color(tum_dblue, 0.5), lighten_color(tum_dblue, 0.2)]
         )
-tum_blue_to_red = mc.LinearSegmentedColormap.from_list("tum_blue_to_red", [tum_dred, lighten_color(tum_dred, 0.3), lighten_color(tum_s1, 0.3), tum_s1])
+tum_blue_to_red = mc.LinearSegmentedColormap.from_list("tum_blue_to_red", [tum_dred, lighten_color(tum_dred, 0.3), lighten_color(tum_dblue, 0.3), tum_dblue])
+
 
 class data_linewidth_plot():
 

@@ -37,7 +37,7 @@ class Ms:
         shift = shiftby**len(self.ms)
         for m in self.ms:
             dfall = m.get_data(cout=False)
-            df = dfall[dataqmin: dataqmax]
+            df = dfall[m.dataqmin: m.dataqmax]
             ax.errorbar(df.q, df.I * shift, df.err_I * shift, marker=m.marker,
                         color=m.color,
                         linestyle='', label=m.label, elinewidth=0.2, **kwargs)
@@ -89,7 +89,8 @@ class Ms:
             label = m.label
             ax.errorbar(df.q, df.q**2 * df.I * 1000,  marker=m.marker, color=m.color,
                         linestyle='', label=label, elinewidth=0.2, **kwargs)
-            ax.legend()
+            # ax.legend()
+            ax.legend(fontsize='xx-small')
             #             ax.annotate(m.partext, xy=(0.0, 0.0), xycoords='axes fraction')
             # ax.grid()
             ax.set_ylim(0,5)
@@ -117,78 +118,7 @@ class Ms:
     def debye(self, **kwargs):
         pass
 
-    def dfits(self, fits=True, shiftby=1, **kwargs):
-        shift = shiftby**len(self.ms)
-        if 'ax' in kwargs:
-            ax = kwargs.pop('ax')
-        else:
-            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4),
-                                     sharex=True, sharey=True, squeeze=True)
-        if 'ylim' in kwargs:
-            ylim=kwargs.pop('ylim')
-        else:
-            ylim = [None, None]
-        if 'topleft' in kwargs:
-            topleft = kwargs.pop('topleft')
-        else:
-            topleft=''
-        for m in self.ms:
-            df = m.get_data()
-            phtext = f'pH {m.sample.buffer.pH}'
-            if not m.sample.tt:
-                phtext='untreated'
-            if fits:
-                m.lowq_fitdict, m.lowq_fitdf = m.lmodel.fit(m, p0=m.lp0, qmax=m.q1, bounds=m.lbounds,
-                                                         fixed_parameters=m.lfixed_pars)
-                m.highq_fitdict, m.highq_fitdf = m.hmodel.fit(m, p0=m.lp0, qmin=m.q2, bounds=m.hbounds,
-                                                           fixed_parameters=m.hfixed_pars)
-                # label = '{}'.format(
-                #     phtext, m.lowq_fitdict['chi2'], m.highq_fitdict['chi2'],
-                # )
-
-            ax.loglog(df.q, df.I*shift, marker=m.marker, label=m.label, color=m.color, linestyle='', **kwargs)
-            if fits:
-                ax.loglog(m.highq_fitdf.q, m.highq_fitdf.fit*shift, marker='', color='black')
-                ax.loglog(m.lowq_fitdf.q, m.lowq_fitdf.fit*shift, marker='', color='black')
-            shift = shift/shiftby
-        ax.legend(fontsize='x-small')
-        ax.set_xlabel('$q$ [1/nm]')
-        ax.set_ylim(*ylim)
-        # ax.grid()
-    #     axes[0][1].set_xlabel('$q$ [1/nm]')
-        ax.set_ylabel('$I$ [1/cm]')
-        if fits:
-            ax.set_ylabel('Intensity [1/cm] shifted')
-            text = '$I(q) = I_{Beaucage}(q) + I_F$'
-        ax.annotate(topleft, xy=(.1, .9), xycoords='axes fraction')
-
-    def dres(self, **kwargs):
-        if 'ax' in kwargs:
-            ax = kwargs.pop('ax')
-        else:
-            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4),
-                                     sharex=True, sharey=True, squeeze=True)
-        if 'ylim' in kwargs:
-            ylim=kwargs.pop('ylim')
-        else:
-            ylim = [None, None]
-        for m in self.ms:
-            label = '{}; $\\chi^2_l = {:.1f}$; $\\chi_h^2 = {:.1f}$'.format(
-                    m.label, m.lowq_fitdict[ 'chi2' ], m.highq_fitdict[ 'chi2' ]
-                    )
-            df1 = m.lowq_fitdf
-            df2 = m.highq_fitdf
-            ydata1 = df1.res/df1.err_I
-            ydata2 = df2.res/df2.err_I
-            ax.plot(df1.q, ydata1, marker = m.marker, color=m.color,
-                            linestyle='')
-            ax.plot(df2.q, ydata2, marker = m.marker, color=m.color,
-                            linestyle='', label = label)
-        ax.legend(fontsize='xx-small')
-        ax.set_ylabel('Normalized Residuals')
-        ax.set_xlabel('$q\\mathrm{\,[nm^{-1}]}$')
-
-    def save_fit_results(self, path, **kwargs):
+    def get_results(self):
         par_dict = {}
         for par in self.model.parameters:
             par_dict[par] = []
@@ -197,8 +127,22 @@ class Ms:
                 par_dict[par].append(m.fit_dict[par])
                 par_dict[f'std_{par}'].append(m.fit_dict['std_'+par])
         self.df = pd.DataFrame(par_dict)
+        return self.df
+
+    def save_fit_results(self, path, **kwargs):
+        self.df = self.get_results()
         self.df.to_csv(path)
         return self.df
+
+    def plot_par(self, par, **kwargs):
+        ax, kwargs = self.make_plot(**kwargs)
+        df = self.get_results()
+        xdata = [m.label for m in self.ms]
+        ydata = df[par]
+        err_ydata = df[f'std_{par}']
+        ax.errorbar(xdata, ydata, err_ydata, **kwargs)
+        return ax
+
 
     def markdown_table(self, fixed_pars=[], e_pars=[], **kwargs):
         out = '| parameter |'

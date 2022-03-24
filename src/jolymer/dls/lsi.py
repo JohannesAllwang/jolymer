@@ -17,6 +17,8 @@ from scipy import optimize, constants
 from .. import Sample
 from ..Measurement import Measurement
 from .. import os_utility as osu
+from . import repes_utility
+from . import repes_utility as ru
 
 
 class lsi(Measurement):
@@ -26,7 +28,9 @@ class lsi(Measurement):
     def __init__(self, lsi_id, instrument='lsi', evaluate_script=True):
         self.instrument = instrument
         with dbo.dbopen() as c:
-            c.execute(f"SELECT * FROM {self.instrument}_measurements WHERE id=?", (lsi_id,))
+            query = f"""SELECT id, mdate, filename, sample, mode, comment
+            FROM {self.instrument}_measurements WHERE id=?"""
+            c.execute(query, (lsi_id,))
             self.id, self.datestring, self.filename, self.samplestring, self.mode, self.comment = list(c.fetchone())
             c.execute(f"SELECT * FROM {self.instrument}_exceptions WHERE {self.instrument}_id=?", (lsi_id,))
             exceptions = list(c.fetchall())
@@ -36,9 +40,8 @@ class lsi(Measurement):
             self.badangles = [phi[1] for phi in badangles]
 
         self.figures_path = join(Measurement.figures_path, f'{self.instrument}_{self.id}')
-        self.phidls_path  = join(self.figures_path, 'phidls')
         osu.create_path(self.figures_path)
-        osu.create_path(self.phidls_path)
+        # osu.create_path(self.phidls_path)
         try:
             self.continnice = True if 'continnice' in os.listdir(self.figures_path) else False
         except:
@@ -51,7 +54,10 @@ class lsi(Measurement):
             sample_type, sample_id = self.samplestring.split('_')
             self.sample = Sample.get_sample(sample_type, sample_id)
 
-        self.path =  os.path.join(self.rawdatapath, 'dls', f'{self.datestring}')
+        self.path = os.path.join(self.rawdatapath, 'dls', f'{self.datestring}')
+        self.phidls_path = join(self.rawdatapath, 'phidls',
+                                f'{self.datestring}_{self.filename}')
+        osu.create_path(self.phidls_path)
         if evaluate_script:
             script_df = pd.read_csv(f'{self.path}/{self.filename}.lsiscript', sep='\t', names=['index', 'start_angle', 'end_angle'
                                                                 ,'step_angle', 'per_angle', 'sec', 'TODO1',
@@ -112,6 +118,16 @@ class lsi(Measurement):
             for line in f:
                 if line.split(':')[0] == name:
                     return line.split(':')[1]
+
+    def get_visc(self):
+        visc = self.get_metadata(self.seq_numbers[0], 'Viscosity (mPas)')
+        visc = float(visc)/1000
+        return visc
+
+    def get_n(self):
+        n = self.get_metadata(self.seq_numbers[0], 'Refractive index')
+        n = float(n)
+        return n
 
     def get_rayleigh_ratio(self, **kwargs):
         """
@@ -188,7 +204,7 @@ class lsi(Measurement):
         if 'xmin' in kwargs:
             xmin = kwargs.pop('xmin')
         else:
-            xmin = 15
+            xmin = 7
         if 'xmax' in kwargs:
             xmax = kwargs.pop('xmax')
         else:
@@ -282,8 +298,47 @@ class lsi(Measurement):
             dfout.err_g2 += (df.g2 - dfout.g2) ** 2
             n += 1
         dfout.err_g2 = np.sqrt(dfout.err_g2 / n)
+        dfout['rapp'] = self.Rfromt(dfout.t, self.qq(phi))
         return dfout, dfs
 
+    def get_phidls_filename(self, angle, end='asc'):
+        filename = join(self.phidls_path, f'T{self.get_TC()}_phi{angle}.{end}')
+        return filename
+
+    def write_phidls_file(self, phi):
+        filename = self.get_phidls_filename(phi)
+        dfg2, dfs = self.get_average_g2(phi)
+        dfg2.t = dfg2.t
+        ru.write_ALV6000(self, dfg2, dfI=None, filename=filename)
+
+    def write_phidls_files(self):
+        for phi in self.angles:
+            self.write_phidls_file(phi)
+
+    def get_res(self, angle):
+        filename = self.get_phidls_filename(angle, end='res')
+        df = pd.read_csv(filename, sep=',', header=None,
+                         names=['t', 'res', 'g2', 'fit'])
+        df.t = 10 ** df.t
+        return df
+
+    def get_moA(self, angle, A='A'):
+        # filename = self.get_phidls_filename(angle, end=f'mo{A}')
+        print('Not implemented')
+
+    def get_Arl(self, angle, A='A', rmin=0, rmax=np.inf):
+        filename = self.get_phidls_filename(angle, end=f'{A}rl')
+        df = pd.read_csv(filename, sep=',', header=None,
+                         names=['t', 'dist'])
+        df['logt'] = df.t
+        df.t = 10 ** df.t
+        df['rapp'] = self.Rfromt(df.t, self.qq(angle))
+        df = df.loc[df.rapp > rmin]
+        df = df.loc[df.rapp < rmax]
+        return df
+
+    def get_phidlstable(self, fit):
+        return fit.get_phidlstable(self)
 
     def get_fitpar(self, fit, parameter):
         pass
@@ -292,7 +347,7 @@ class lsi(Measurement):
         pass
 
     def phirange(self, phi):
-        "returns all the seq_numbers of the argument angle. Exceptions excepted."
+        "returns all the seq_numbers of phi. Exceptions excepted."
         index = np.where(self.allangles == phi)[0]
         first = int(self.per_angle * index + self.seq_numbers[0])
         delta = int(self.per_angle)
@@ -314,7 +369,8 @@ class lsi(Measurement):
 
     def RfromD(self, D):
         TK = self.get_TK()
-        visc = self.sample.get_viscosity(TK)
+        # visc = self.sample.get_viscosity(TK)
+        visc = self.get_visc()
         out = constants.Boltzmann*TK / (6*np.pi*visc*D)
         return out
 
@@ -330,14 +386,19 @@ class lsi(Measurement):
 
     def DfromR(self, rh):
         TK = self.get_TK()
+        visc = self.get_visc()
         out = constants.Boltzmann*TK / \
-                (6*np.pi*self.sample.get_viscosity(TK)*rh)
+                (6*np.pi*visc*rh)
         return out
+
+    def tfromR(self, rh, qq):
+        D = self.DfromR(rh)
+        return 1 / (D * qq)
 
     def q(self, phi):
         "calculates the scattering vector q[m^-1] from the scattering angle 2\Theta."
         wl = self.get_wl()
-        n = self.sample.get_n(self.get_TK(), wl)
+        n = self.get_n()
         out = n *4* np.pi *np.sin((phi*np.pi/360))/wl
         return out
 
@@ -345,8 +406,8 @@ class lsi(Measurement):
         "calculates the square of scattering vector q^2[m^-2] from the scattering angle 2\Theta."
         return self.q(phi)**2
 
-    def get_visc(self):
-        return self.sample.get_viscosity(self.get_TK())
+    # def get_visc(self):
+    #     return self.sample.get_viscosity(self.get_TK())
 
     def plot_data(self, seq_number, ax=None, **kwargs):
         """
@@ -481,6 +542,9 @@ class _oneT(lsi):
         self.script_row = script_row
         self.name = f'{self.instrument}{self.id}_{int(script_row)}'
         self.angles = [phi for phi in self.allangles if phi not in self.badangles]
+
+    def get_TC(self):
+        return self.TC
 
 def get_oneT(mid, row=1, instrument='lsi3d'):
     return lsi3d(mid, instrument=instrument).get_scriptrow(row)

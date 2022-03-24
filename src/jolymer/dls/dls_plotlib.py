@@ -69,15 +69,23 @@ def _fit_compilation(m, seq_numbers, cm, labelfunc, title, ax=None, fit=None,
 
 
 def plot_phidls(m, phi, fitcolor='black', ax=None, showres=True, fit=None,
-                **kwargs):
+                rapp=False, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     if fit is None:
         df, dfs = m.get_average_g2(phi)
         ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
         showres = False
+    elif fit.name == 'repes':
+        df, dfs = m.get_average_g2(phi)
+        dfres = m.get_res(phi)
+        xdata = df.t
+        if rapp:
+            xdata = df.rapp
+        ax.errorbar(xdata, df.g2, df.err_g2, **kwargs)
+        ax.errorbar(dfres.t, dfres.fit, color=fitcolor)
     else:
-        df = fit.get_phidlsfit(m, phi)
+        df = dfres = fit.get_phidlsfit(m, phi)
         ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
         ax.errorbar(df.t, df.fit, color=fitcolor)
     ax.set_xscale('log')
@@ -86,9 +94,30 @@ def plot_phidls(m, phi, fitcolor='black', ax=None, showres=True, fit=None,
         rescolor = kwargs['color']
     if showres:
         axres = ax.twinx()
-        axres.plot(df.t, df.res, alpha=0.2, color=rescolor)
+        axres.plot(dfres.t, dfres.res, alpha=0.2, color=rescolor)
         axres.set_ylabel('Relative Residuals')
         axres.set_ylim(-0.05, 0.05)
+    return ax
+
+
+def plot_phidls_dist(m, phi, ax=None, fit='repes',
+                     rapp=False, **kwargs):
+    if ax is None:
+        fig, ax = plt.subplots()
+    # if fit == 'contin':
+    #     ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
+    #     showres = False
+    elif fit.name == 'repes':
+        df = m.get_Arl(phi)
+        if rapp:
+            xdata = df.rapp
+        ax.plot(df.t, df.dist, **kwargs)
+    else:
+        df = dfres = fit.get_phidlsfit(m, phi)
+        ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
+    ax.set_xscale('log')
+    if 'color' in kwargs:
+        rescolor = kwargs['color']
     return ax
 
 
@@ -102,6 +131,19 @@ def phidls_compilation(m, phis, cm, ax=None, fit=None,
         ax.legend(**legendargs)
     # ax.set_title(title)
     return ax
+
+
+def phidls_dist_compilation(m, phis, cm, ax=None, fit=None,
+                            showlegend=True, legendargs={}, **kwargs):
+    citer = plu.cm_for_l(cm, phis)
+    for phi, color in zip(phis, citer):
+        label = f'{phi} $^\\circ$'
+        ax = plot_phidls_dist(m, phi, fit=fit, ax=ax, color=color, label=label, **kwargs)
+    if showlegend:
+        ax.legend(**legendargs)
+    # ax.set_title(title)
+    return ax
+
 
 
 def seq_compilation(m, seq_numbers, fit=None, **kwargs):

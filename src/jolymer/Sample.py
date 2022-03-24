@@ -168,13 +168,20 @@ class Sample:
 
 class Buffer(Sample):
 
-    def __init__(self, id):
-        self.type = 'buffer'
+    def __init__(self, bid, pH, comment):
+        self.type = 'ideal_buffer'
+        self.id = bid
+        self.name = bid
+        self.pH = pH
+        self.comment = comment
+
+    @classmethod
+    def from_db(cls, bid):
         with dbo.dbopen() as c:
-            c.execute("SELECT * FROM buffers WHERE id=?", (id,))
+            c.execute("SELECT id, pH, comment FROM buffers WHERE id=?",
+                      (bid,))
             values = c.fetchone()
-        self.id, self.name, self.pH, self.salt_name, self.salt_concentration,\
-            self.visc, self.n, self.ganesha_id, self.comment = values
+        return cls(*values)
 
     def get_viscosity(self, TK):
         if self.id == 0:
@@ -183,16 +190,41 @@ class Buffer(Sample):
             if TK == 293.15:
                 return 1.159
         else:
-            print('using the viscosity of pure H2O (In the buffer class)')
+            print('using the viscosity of pure H2O (In the buffer class)', visc_water(TK))
             return visc_water(TK)
+
     def get_n(self, TK, wl):
         if self.id == 0:
             return n_water(TK, wl)
         else:
-            print('Using the refractive index of water. (In the Buffer Class)')
+            print('Using the refractive index of water. (In the Buffer Class)', n_water(TK, wl))
             return n_water(TK, wl)
 
+
+class BufferSample(Buffer):
+
+    def __init__(self, bid, datestring, ideal_id, comment):
+        self.id = bid
+        self.name = bid
+        self.datestring = datestring
+        self.comment = comment
+        self.ideal = Buffer.from_db(ideal_id)
+
+    @classmethod
+    def from_db(cls, bid):
+        with dbo.dbopen() as c:
+            query = """SELECT id, datestring, ideal_id, comment
+            FROM buffer_samples WHERE id=?"""
+            c.execute(query, (bid,))
+            values = c.fetchone()
+        return cls(*values)
+
+
 class pps_Sample(Sample):
+
+    @classmethod
+    def from_db(cls, bid):
+        return cls(bid)
 
     def __init__(self, id):
         self.type = 'pps'
@@ -284,15 +316,15 @@ def get_polymer(type, id):
         raise Exception('No polymer type of this sort found')
 
 
-class generic_Sample(Sample):
+class GenericSample(Sample):
 
-    def __init__(self, id):
-        self.type = 'generic'
-        with dbo.dbopen() as c:
-            c.execute("SELECT * FROM generic_samples WHERE id=?", (id,))
-            values = c.fetchone()
-            self.id, self.datestring, polymer, self.gpl,\
-                    buffer_id, self.comment, self.timestring = values
+    def __init__(self, gid, datestring, timestring, polymer, gpl, buffer_id,
+                 comment):
+        self.id = gid
+        self.datestring = datestring
+        self.gpl = gpl
+        self.comment = comment
+        self.timestring = timestring
         polymer_type, polymer_id = polymer.split('_')
         self.polymer = get_polymer(polymer_type, polymer_id)
         try:
@@ -301,6 +333,19 @@ class generic_Sample(Sample):
         except:
             print('No buffer found')
             self.buffer = None
+        self.type = 'generic'
+
+    @classmethod
+    def from_db(cls, gid):
+        with dbo.dbopen() as c:
+            query = """SELECT id, creation_date, ptime, polymer, gpl,
+            buffer_id, comment
+            FROM generic_samples
+            WHERE id=?"""
+            c.execute(query, (gid,))
+            values = c.fetchone()
+            print(values)
+        return cls(*values)
 
     def get_molpg(self):
         gpl = self.gpl
@@ -316,6 +361,7 @@ class generic_Sample(Sample):
         Dalton = self.polymer.molecular_weight # g/mol
         molpl = gpl/Dalton
         return molpl
+
 
 class TresySample(Sample):
 
@@ -342,6 +388,7 @@ class TresySample(Sample):
         out = f'{self.PS.short_name}/{self.protein.short_name}'
         return out
 
+
 class TresyBuffer(Sample):
 
     def __init__(self, buffer_id):
@@ -358,19 +405,45 @@ class TresyBuffer(Sample):
         return n_water(TK, wl)
 
 
+class TryTrySample(Sample):
 
-def get_sample(type, id):
-    if type=='pps':
-        return pps_Sample(id)
-    elif type == 'buffer':
-        return Buffer(id)
-    elif type=='polymer':
-        return polymer_Sample(id)
-    elif type == 'generic':
-        return generic_Sample(id)
-    elif type == 'tresy':
-        return TresySample(id)
-    elif type == 'TrypsinPowder':
-        return Protein(1)
+    def __init__(self, ttid, datestring, buffer_id, ps_id, ps_gpl, comment):
+        self.id = ttid
+        self.datestring = datestring
+        self.buffer = BufferSample.from_db(buffer_id)
+        self.PS = Polysaccharide(ps_id)
+        self.PS_gpl = ps_gpl
+        self.comment = comment
+
+    @classmethod
+    def from_db(cls, ttid):
+        with dbo.dbopen() as c:
+            query = """SELECT id, datestring, buffer_id, ps_id, ps_gpl, comment
+            FROM trytry_samples WHERE id=?"""
+            c.execute(query, (ttid,))
+            values = c.fetchone()
+        return cls(*values)
+
+
+typedict = {
+    'pps': pps_Sample,
+    # 'buffer': Buffer,
+    'buffer': BufferSample,
+    'trytry': TryTrySample,
+    'polymer': polymer_Sample,
+    'generic': GenericSample,
+}
+
+nodbdict = {
+    'tresy': TresySample
+    }
+
+
+
+def get_sample(stype, sid):
+    if stype in nodbdict:
+        return nodbdict[stype](sid)
+    if stype in typedict:
+        return typedict[stype].from_db(sid)
     else:
         print('No samples of that type are implemented...')

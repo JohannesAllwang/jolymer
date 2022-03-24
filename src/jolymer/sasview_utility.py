@@ -72,7 +72,7 @@ class SasModel(sasmodel.SAXS_Model):
                     fit_dict[f'std_{par}'] = std_par
         return M, fit_dict
 
-    def fit(self, m, **kwargs):
+    def fit(self, m, iqmin=0, iqmax=np.inf, **kwargs):
         """
         That this kind of model is compatible with the following kind of code:
         m.fit_dict, m.fit_df = m.model.fit(m, bounds=m.bounds,
@@ -88,6 +88,9 @@ class SasModel(sasmodel.SAXS_Model):
             'fit': M.theory(),
             'res': M.theory() - np.array(M.Iq)
             })
+        # fit_df = fit_df.loc[fit_df.q < iqmax]
+        # fit_df = fit_df.loc[fit_df.q > iqmin]
+        fit_df = fit_df[iqmin:iqmax]
         return fit_dict, fit_df
 
     def load_pars(self):

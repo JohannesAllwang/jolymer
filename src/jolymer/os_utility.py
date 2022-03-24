@@ -8,6 +8,7 @@ Created on Mon Dec  7 13:15:52 2020
 
 
 import os
+import sys
 import zipfile
 import shutil
 import subprocess
@@ -39,4 +40,6 @@ def files(path):
 
 def run_program(name, *args):
     cmd = ['powershell', f'./{name}.exe', *args]
+    if sys.platform == 'linux':
+        cmd = [f'./{name}.exe', *args]
     return subprocess.run(cmd, cwd=atsas_bin)

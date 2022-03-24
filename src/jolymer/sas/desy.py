@@ -39,9 +39,10 @@ class Desy(SAXS_Measurement):
 
     def __init__(self, desy_id, issetup=False, cout=True, **kwargs):
         with dbo.dbopen() as c:
-            c.execute("SELECT * FROM desy_measurements WHERE id=?;", (desy_id,))
-            self.id, self.datestring, self.given_name, self.samplestring, _,\
-                self.comment, self.timestring = list(c.fetchone())
+            query = f"""SELECT id, measure_date, given_name, sample, comment, mtime
+            FROM desy_measurements WHERE id=?"""
+            c.execute(query, (desy_id,))
+            self.id, self.datestring, self.given_name, self.samplestring, self.comment, self.timestring = list(c.fetchone())
         if cout:
             print(self.samplestring)
         if self.samplestring == None:
