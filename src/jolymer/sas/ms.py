@@ -106,7 +106,6 @@ class Ms:
             label = m.label
             ax.errorbar(df.q, df.q**3 * df.I,  marker=m.marker, color=m.color,
                         linestyle='', label=label, elinewidth=0.2, **kwargs)
-            ax.legend()
             #             ax.annotate(m.partext, xy=(0.0, 0.0), xycoords='axes fraction')
             # ax.grid()
             ax.set_ylim(0,0.0025)
@@ -114,6 +113,7 @@ class Ms:
             ax.set_xlabel('$q$ [1/nm]')
             #         axes[0][1].set_xlabel('$q$ [1/nm]')
             ax.set_ylabel('$I\\cdot q^3 \\mathrm{\\,[nm^{-3}cm^{-1}]}$')
+        ax.legend(fontsize='x-small')
 
     def debye(self, **kwargs):
         pass

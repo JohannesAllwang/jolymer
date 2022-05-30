@@ -126,6 +126,16 @@ tum_lorange = lighten_color(tum_orange, amount=0.7)
 tum_lred = lighten_color(tum_red, amount=0.7)
 tum_ldred = lighten_color(tum_dred, amount=0.7)
 
+tum_llblue = lighten_color(tum_blue, amount=0.3)
+tum_llpurple = lighten_color(tum_purple, amount=0.3)
+tum_llcyan = lighten_color(tum_cyan, amount=0.3)
+tum_llgreen = lighten_color(tum_green, amount=0.3)
+tum_llyellow = lighten_color(tum_yellow, amount=0.3)
+tum_lldyellow = lighten_color(tum_dyellow, amount=0.3)
+tum_llorange = lighten_color(tum_orange, amount=0.3)
+tum_llred = lighten_color(tum_red, amount=0.3)
+tum_lldred = lighten_color(tum_dred, amount=0.3)
+
 tum_blues = mc.ListedColormap(
         [tum_dblue, lighten_color(tum_dblue, 0.8), lighten_color(tum_dblue, 0.5), lighten_color(tum_dblue, 0.2)]
         )

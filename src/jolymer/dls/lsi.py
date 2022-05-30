@@ -269,9 +269,9 @@ class lsi(Measurement):
             dict_sls['err_CRA'].append(np.std(CRAs))
             dict_sls['err_CRB'].append(np.std(CRBs))
             dict_sls['err_I0'].append(np.std(I0s))
-            dict_sls['err_Isample'].append(np.std(Isamples))
+            dict_sls['err_Isample'].append(np.std(Isamples))  # beta correction?
         df = pd.DataFrame(dict_sls)
-        if buf==None:
+        if buf is None:
             return df
         buf.angles = self.angles
         df['Ibuf'] = buf.get_sls().Isample
@@ -323,8 +323,27 @@ class lsi(Measurement):
         return df
 
     def get_moA(self, angle, A='A'):
-        # filename = self.get_phidls_filename(angle, end=f'mo{A}')
-        print('Not implemented')
+        filename = self.get_phidls_filename(angle, end=f'mo{A}')
+        outdict = {'peaks':[],
+                'subpeaks':[]}
+        with open(filename) as f:
+            for line in f:
+                whatpeaks = 'peaks'
+                if line[0] == '|':
+                    line = line[1::]
+                    whatpeaks = 'subpeaks'
+                try:
+                    amount, value = line.split('   ')
+                    peak = [float(amount), float(value)]
+                    outdict[whatpeaks].append(peak)
+                except:
+                    # print(line[0:6])
+                    # print(line.split('   '))
+                    if line[0:6] == 'SqBeta':
+                        outdict['SqBeta'] = float(line.split('=')[1])
+                    if line[0:8] == 'Baseline':
+                        outdict['Baseline'] = float(line.split('=')[1])
+        return outdict
 
     def get_Arl(self, angle, A='A', rmin=0, rmax=np.inf):
         filename = self.get_phidls_filename(angle, end=f'{A}rl')

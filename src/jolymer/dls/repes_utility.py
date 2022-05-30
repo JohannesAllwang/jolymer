@@ -223,6 +223,9 @@ class REPES(Cun):
     def __init__(self):
         self.name = 'repes'
 
+    def get_moA(self, m, phi, **kwargs):
+        return m.get_moA(phi, **kwargs)
+
     def get_average_tau(self, m, phi, mean='log', rmin=0, rmax=np.inf):
         df = m.get_Arl(phi, rmin=rmin, rmax=rmax)
         if mean == 'log':
@@ -247,16 +250,25 @@ class REPES(Cun):
                     'Dapp': [],
                     'Rapp': [],
                     'tau': [],
+                    'beta': [],
+                    'SqBeta': [],
+                    'Baseline': [],
                     'Gamma': []}
         for phi in m.angles:
             qq = m.qq(phi)
             tau = self.get_average_tau(m, phi, rmin=rmin, rmax=rmax)
+            resultdict = self.get_moA(m, phi)
+            SqBeta = resultdict['SqBeta']
+            Baseline = resultdict['Baseline']
             tempdict['phi'].append(phi)
             tempdict['qq'].append(qq)
             tempdict['Dapp'].append(1 / (qq * tau))
             tempdict['Rapp'].append(m.Rfromt(tau, qq))
             tempdict['tau'].append(tau)
             tempdict['Gamma'].append(1/tau)
+            tempdict['SqBeta'].append(SqBeta)
+            tempdict['beta'].append(SqBeta ** 2)
+            tempdict['Baseline'].append(Baseline)
         df = pd.DataFrame(data=tempdict)
         return df
 

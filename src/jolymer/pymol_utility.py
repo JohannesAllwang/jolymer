@@ -1,7 +1,7 @@
 from __future__ import print_function
 
-import pymol
-from pymol import cmd
+# import pymol
+# from pymol import cmd
 import numpy as np
 import pandas as pd
 import math
@@ -14,6 +14,7 @@ import matplotlib.colors as mc
 
 from . import plot_utility as plu
 from . import os_utility as osu
+
 
 pdbdir = r'/home/johannes/LRZ Sync+Share/master-thesis/pdb_files/'
 
@@ -50,7 +51,6 @@ def surfacecharge(name, pH=7, cwd=pdbdir):
     pml_file = f'{name}_pH{pH}.pml'
     with open(join(cwd, pml_file), 'w') as f:
         f.write('# Drag this script into an open PyMOL window\n')
-        f.write('# The model will be loaded and also saved as a .pse file for ease of starting over\n')
 
         f.write('# Load the files\n')
         f.write('from jolymer.pymol_utility import *\n')
@@ -71,8 +71,8 @@ def surfacecharge(name, pH=7, cwd=pdbdir):
         f.write('set surface_ramp_above_mode\n')
         f.write('ray')
 
-        f.write('# Setup export\n')
-        f.write('set pse_export_version, 1.7\n')
+        # f.write('# Setup export\n')
+        # f.write('set pse_export_version, 1.7\n')
 
         # f.write('# Save file as .pse')
         # f.write('save hz90dpvisq_APBS.pse')
@@ -81,11 +81,11 @@ def surfacecharge(name, pH=7, cwd=pdbdir):
 
 def rgyrate(selection='(all)', quiet=1):
     '''
-DESCRIPTION
+    DESCRIPTION
 
     Radius of gyration
 
-USAGE
+    USAGE
 
     rgyrate [ selection ]
     '''
@@ -192,6 +192,7 @@ def get_com(selection, state=1, mass=None, quiet=1):
 
 
 def plot_rg():
+    cmd.extend("get_com", get_com)
     pymol.cmd.extend("rgyrate", rgyrate)
     pymol.cmd.set('sphere_transparency', 0.5)
 
@@ -206,4 +207,3 @@ def plot_rg():
     print(r, 'nm')
 
 
-# cmd.extend("get_com", get_com)

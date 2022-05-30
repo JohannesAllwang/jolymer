@@ -15,6 +15,7 @@ from .. import os_utility as osu
 from ..Measurement import Measurement
 
 from matplotlib.backends.backend_pdf import PdfPages
+from .repes_utility import repes
 
 
 def qlabel(ax, par):
@@ -27,6 +28,8 @@ def qqlabel(ax, par, unit='A.U.'):
     parstring = par
     ax.set_xlabel('$q^2\\,\\mathrm{[\mu m^{-2}]}$')
     ax.set_ylabel(f'${parstring}\\,\\mathrm{{[{unit}]}}$')
+    if unit is None:
+        ax.set_ylabel(f'${parstring}$')
 
 
 def make_plot(kwargs):
@@ -108,7 +111,7 @@ def Dapp(m, fit=None, rmin=0, rmax=np.inf, **kwargs):
     df = fit.get_phidlstable(m, rmin=rmin, rmax=rmax)
     xdata, ydata = df.qq * 1e-12, df.Dapp * 1e12
     ax.errorbar(xdata, ydata, **kwargs)
-    qqlabel(ax, 'D_{{app}}', unit='\mu m^2/s')
+    qqlabel(ax, 'D_{{app}}', unit='\\mu m^2/s')
     return ax, (xdata, ydata)
 
 
@@ -118,4 +121,13 @@ def Rapp(m, fit='repes', rmin=0, rmax=np.inf, **kwargs):
     xdata, ydata = df.qq * 1e-12, df.Rapp * 10**9
     ax.errorbar(xdata, ydata, **kwargs)
     qqlabel(ax, 'R_{{app}}', unit='nm')
+    return ax, (xdata, ydata)
+
+
+def beta(m, fit=repes, **kwargs):
+    ax, kwargs = make_plot(kwargs)
+    df = fit.get_phidlstable(m)
+    xdata, ydata = df.qq * 1e-12, df.beta
+    ax.errorbar(xdata, ydata, **kwargs)
+    qqlabel(ax, '\\beta', unit=None)
     return ax, (xdata, ydata)
