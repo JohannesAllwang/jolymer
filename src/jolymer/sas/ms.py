@@ -12,6 +12,7 @@ from .beaucage import beaucage
 
 from matplotlib.backends.backend_pdf import PdfPages
 
+
 class Ms:
 
     def __init__(self, ms):
@@ -53,7 +54,7 @@ class Ms:
             shift = shift / shiftby
         ax.set_xscale('log')
         ax.set_yscale('log')
-        ax.legend(fontsize='x-small')
+        ax.legend(fontsize='xx-small')
         ax.set_xlabel('$q$ [1/nm]')
         ax.set_ylabel('$I$ [1/cm]')
 
@@ -113,7 +114,7 @@ class Ms:
             ax.set_xlabel('$q$ [1/nm]')
             #         axes[0][1].set_xlabel('$q$ [1/nm]')
             ax.set_ylabel('$I\\cdot q^3 \\mathrm{\\,[nm^{-3}cm^{-1}]}$')
-        ax.legend(fontsize='x-small')
+        ax.legend(fontsize='xx-small')
 
     def debye(self, **kwargs):
         pass
