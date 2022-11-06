@@ -19,6 +19,7 @@ from .. import plot_utility as plu
 from .SAXS_Measurement import SAXS_Measurement
 from .ms import Ms
 from .desy import Desy
+from ..dls.lsi import lsi
 
 class TryscanSample:
 
@@ -155,6 +156,84 @@ class TryscanJumpPart(Desy):
             print(f'{len_before-len_after} excluded I values!')
         return df
 
+
+class TryscanMod3D(lsi):
+
+    instrument = 'lsi3d'
+
+    def __init__(self, lsi_id, instrument='lsi3d', evaluate_script=True):
+        self.instrument = instrument
+        with dbo.dbopen() as c:
+            query = f"""SELECT id, mdate, filename, sample, mode, comment
+            FROM {self.instrument}_measurements WHERE id=?"""
+            c.execute(query, (lsi_id,))
+            self.id, self.datestring, self.filename, self.samplestring, self.mode, self.comment = list(c.fetchone())
+            c.execute(f"SELECT * FROM {self.instrument}_exceptions WHERE {self.instrument}_id=?", (lsi_id,))
+            exceptions = list(c.fetchall())
+            self.exceptions = [e[1] for e in exceptions]
+            c.execute(f"SELECT * FROM {self.instrument}_badangles WHERE {self.instrument}_id=?", (lsi_id,))
+            badangles = list(c.fetchall())
+            self.badangles = [phi[1] for phi in badangles]
+
+        # self.figures_path = join(Measurement.figures_path, f'{self.instrument}_{self.id}')
+        # osu.create_path(self.figures_path)
+        self.sample = TryscanSample(*sampledict[self.samplestring])
+        self.path = os.path.join(self.rawdatapath, 'dls', f'{self.datestring}')
+        self.phidls_path = join(self.rawdatapath, 'phidls',
+                                f'{self.datestring}_{self.filename}')
+        osu.create_path(self.phidls_path)
+        if evaluate_script:
+            script_df = pd.read_csv(f'{self.path}/{self.filename}.lsiscript', sep='\t', names=['index', 'start_angle', 'end_angle'
+                                                                ,'step_angle', 'per_angle', 'sec', 'TODO1',
+                                                                'TODO2', 'TODO3', 'TC'], index_col=0)
+            Tlist = [x for x in set(script_df.TC)]
+            Tlist.sort()
+            self.TCs = Tlist
+            self.smin = 1
+            self.Tdict = {}
+            seq_number = self.smin
+            print('Use function self.get_scriptrow(i) with the followning:')
+            for index, row in script_df.iterrows():
+                print(self.samplestring)
+                allangles = range(int(row.start_angle), int(row.end_angle+1), int(row.step_angle))
+                allangles = np.array(allangles)
+                seq_numbers = list(range(seq_number, int(row.per_angle)*len(allangles)+1 + seq_number))
+                # print(seq_number, row.per_angle)
+                # print(seq_numbers)
+                oneT = _oneTryscan(row.TC, allangles, seq_numbers, row.per_angle, self.id, index, instrument=self.instrument)
+                self.Tdict[index] = oneT
+                seq_number += int(row.per_angle)*len(allangles)
+                print(f'({index}) : {row.TC}')
+            self.smax = seq_number
+
+            self.seq_numbers = range(int(self.smin), int(self.smax)+1)
+            # self.exceptions = [float(e) for e in exceptions]
+
+        self.rmin = 2e-9
+        self.rmax = 2_000e-9
+        self.filename += '_#.dat'
+        if os.path.exists(self.rawdata_filename('0')):
+            self.seq_numbers = [x-1 for x in self.seq_numbers]
+        self.name = f'{self.instrument}{self.id}'
+        # return self.Tdict
+
+
+
+class _oneTryscan(lsi):
+
+    def __init__(self, TC, allangles, seq_numbers, per_angle, lsi_id, script_row, instrument=None):
+        self.seq_numbers= seq_numbers
+        TryscanMod3D.__init__(self, lsi_id, evaluate_script=False)
+        self.TC = TC
+        self.allangles = allangles
+        self.per_angle = per_angle
+        self.script_row = script_row
+        self.name = f'{self.instrument}{self.id}_{int(script_row)}'
+        self.angles = [phi for phi in self.allangles if phi not in self.badangles]
+
+    def get_TC(self):
+        return self.TC
+
 times = 75 + 45*np.linspace(0, 30, num=31)
 csT20 = [TryscanJumpPart('cstryjump', '20C', int(time)) for time in times][0:-2]
 csT60 = [TryscanJumpPart('cstryjump', '60C', int(time)) for time in times][0:-2]
@@ -163,7 +242,7 @@ haT60 = [TryscanJumpPart('hatryjump', '60C', int(time)) for time in times][0:-2]
 tryT20 = [TryscanJumpPart('tryjump', '20C', int(time)) for time in times][0:-2]
 tryT60 = [TryscanJumpPart('tryjump', '60C', int(time)) for time in times][0:-2]
 colors = list(plu.colorgradient('colors', [plu.tum_lblue, plu.tum_dred], 31))
-colorbar = plu.colorgradient('colors', [plu.tum_dblue, 'white', plu.tum_dred], 31)
+colorbar = plu.colorgradient('colors', [plu.tum_dblue, plu.tum_red, plu.tum_yellow], 31)
 colors = list(colorbar)
 
 for csT in [csT20, csT60, haT20, haT60, tryT20, tryT60]:

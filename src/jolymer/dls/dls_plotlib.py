@@ -110,8 +110,10 @@ def plot_phidls_dist(m, phi, ax=None, fit='repes',
     elif fit.name == 'repes':
         df = m.get_Arl(phi)
         if rapp:
-            xdata = df.rapp
-        ax.plot(df.t, df.dist, **kwargs)
+            xdata = df.rapp * 1e9
+        else:
+            xdata = df.t
+        ax.plot(xdata, df.dist, **kwargs)
     else:
         df = dfres = fit.get_phidlsfit(m, phi)
         ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)

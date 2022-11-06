@@ -31,6 +31,8 @@ class Lsis:
         if 'xlim' in kwargs:
             xlim = kwargs.pop('xlim')
             ax.set_xlim(*xlim)
+        ax.tick_params(axis="x", bottom=True, top=True, labelbottom=True, labeltop=False)
+        ax.tick_params(axis="y", left=True, right=True, labelleft=True, labelright=False)
         return ax, kwargs
 
     def fits(self, phi, **kwargs):
@@ -45,17 +47,19 @@ class Lsis:
         ax.set_ylabel('$g_2^c-1$')
         ax.set_xlabel('$\\tau\\mathrm{\\,[s]}$')
         ax.legend()
+        ax.legend(fontsize='x-small')
         return ax
 
     def dists(self, phi, **kwargs):
         ax, kwargs = self.make_plot(**kwargs)
         for m in self.ms:
             ax = dp.plot_phidls_dist(m, phi, fit=self.fit, ax=ax,
-                                     color=m.color,
+                                     color=m.color, **kwargs,
                                      label=m.label, marker='')
-        ax.set_ylabel('$\\tau A(\\tau)$')
-        ax.set_xlabel('$\\tau\\mathrm{\\,[s]}$')
+        ax.set_ylabel('$\\tau_D A(\\tau_D)$')
+        ax.set_xlabel('$\\tau_D\\mathrm{\\,[s]}$')
         ax.legend()
+        ax.legend(fontsize='x-small')
         return ax
 
     def rayleighs(self, **kwargs):
@@ -87,6 +91,7 @@ class Lsis:
             qplot.plot_qqfit(xdata, ydata, color=m.color, marker=None, ax=ax,
                              bounds=[[0, 0], [1e9, 6e6]])
         ax.legend()
+        ax.legend(fontsize='x-small')
         return ax
 
     def Rapps(self, **kwargs):
@@ -109,7 +114,9 @@ class Lsis:
             rdict['rh'].append(rh)
             rdict['err_rh'].append(err_rh)
         ax.legend()
+        ax.legend(fontsize='x-small')
         rdf = pd.DataFrame(rdict)
+        self.rdf = rdf
         return ax, rdf
 
     def Gammas(self, **kwargs):
@@ -119,5 +126,14 @@ class Lsis:
                                              fit=self.fit, marker=m.marker,
                                              label=m.label, **kwargs)
             qplot.plot_qqfit(xdata, ydata, color=m.color, marker=None, ax=ax)
-        ax.legend()
+        ax.legend(fontsize='x-small')
+        return ax
+
+    def Rh(self, **kwargs):
+        ax, kwargs = self.make_plot(**kwargs)
+        xdata = self.rdf.label
+        ydata = self.rdf.rh
+        err_y = self.rdf.err_rh
+        ax.errorbar(xdata, ydata, yerr=err_y, **kwargs)
+        ax.set_ylabel('$R_H$ [nm]')
         return ax

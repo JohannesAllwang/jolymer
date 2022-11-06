@@ -81,6 +81,7 @@ class lsi(Measurement):
                 self.Tdict[index] = oneT
                 seq_number += int(row.per_angle)*len(allangles)
                 print(f'({index}) : {row.TC}')
+            print(self.Tdict)
             self.smax = seq_number
 
             self.seq_numbers = range(int(self.smin), int(self.smax)+1)

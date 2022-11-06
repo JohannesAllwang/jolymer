@@ -27,11 +27,26 @@ def run_sasview(*args):
     return out
 
 
+def get_fit_df(M):
+    fit_df = pd.DataFrame({
+        'q': np.array(M._data.x),
+        'I': np.array(M.Iq),
+        'err_I': np.array(M.dIq),
+        'fit': M.theory(),
+        'res': M.theory() - np.array(M.Iq)})
+    return fit_df
+
+
 class SasModel(sasmodel.SAXS_Model):
 
-    def __init__(self, name):
+    def __init__(self, name, usename=None):
         self.sasmodel = Model(core.load_model(name))
         self.name = name
+        if usename is None:
+            pass
+        else:
+            self.sasmodel.name = usename
+            self.name = usename
         self.longname = name
         self.parameters = list(self.sasmodel.parameters().keys())
         self.pdict = self.sasmodel.parameters()
@@ -81,13 +96,7 @@ class SasModel(sasmodel.SAXS_Model):
                                            fixed_parameters=m.fixed_pars)
         """
         M, fit_dict = self.load_fit(m, name=None)
-        fit_df = pd.DataFrame({
-            'q': np.array(M._data.x),
-            'I': np.array(M.Iq),
-            'err_I': np.array(M.dIq),
-            'fit': M.theory(),
-            'res': M.theory() - np.array(M.Iq)
-            })
+        fit_df = get_fit_df(M)
         # fit_df = fit_df.loc[fit_df.q < iqmax]
         # fit_df = fit_df.loc[fit_df.q > iqmin]
         fit_df = fit_df[iqmin:iqmax]

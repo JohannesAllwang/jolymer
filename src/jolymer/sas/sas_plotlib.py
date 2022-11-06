@@ -127,42 +127,48 @@ def pnp(m, onlyparents=False):
     axsam.errorbar(sdf.q, sdf.I, fmt='.', color = 'black')
 
 
-def all_raw_data(m, onlyparents=False):
-    fig, axsam = plt.subplots(nrows=1, figsize=(8,10))
+def all_raw_data(m, onlyparents=False, ax=None, buf=False, **kwargs):
+    if ax is None:
+        fig, axsam = plt.subplots(nrows=1, figsize=(8,10))
+    else:
+        axsam=ax
     axsam.set_xscale('log')
     axsam.set_yscale('log')
 
-    b_avgdf = m.get_averaged(buf=True)
+    # b_avgdf = m.get_averaged(buf=True)
 
-    parents = m.get_absolute_dfs()[0]
-    label = f'{len(parents)} parents'
-    for parent, color in zip(parents, plu.cm_for_l('winter', parents)):
+    parents = m.get_absolute_dfs(buf=buf)[0]
+    label = f'included'
+    colorbar = plu.colorgradient('colors', [plu.tum_dblue, plu.tum_llblue], len(parents))
+    for parent, color in zip(parents, colorbar):
         x = parent.q
         y = parent.I
         erry = parent.err_I
         erry = 0
         axsam.errorbar(x, y, yerr=erry, fmt='.', color=color, label=label)
         label = None
-    axsam.legend()
-    axsam.set_xlabel('$q\\,[\mathrm{nm^{-2}}]$')
+    axsam.legend(fontsize='x-small')
+    axsam.set_xlabel('$q\\,[\mathrm{nm^{-1}}]$')
     axsam.set_ylabel('$I\\,[\mathrm{cm^{-1}}]$')
 
     alpha = 0.1 if onlyparents else 1
     axbuf = axsam
+    if not onlyparents:
 
-    notparents = m.get_notparent_dfs()[0]
-    label = f'{len(notparents)} not parents'
-    ## Wistia
-    for parent, color in zip(notparents, plu.cm_for_l('autumn', notparents)):
-        x = parent.q
-        y = parent.I
-        erry = parent.err_I
-        erry = 0
-        axsam.errorbar(x, y, yerr=erry, fmt='.', color=color, label=label, alpha=alpha)
-        label = None
-    axbuf.legend()
-    sdf = m.get_data()
-    axsam.errorbar(b_avgdf.q, b_avgdf.I, fmt='-', color = 'black')
+        notparents = m.get_notparent_dfs()[0]
+        label = f'not included'
+        ## Wistia
+        colorbar = plu.colorgradient('colors', [plu.tum_dred, plu.tum_llred], len(notparents))
+        for parent, color in zip(notparents, colorbar):
+            x = parent.q
+            y = parent.I
+            erry = parent.err_I
+            erry = 0
+            axsam.errorbar(x, y, yerr=erry, fmt='.', color=color, label=label, alpha=alpha)
+            label = None
+    axbuf.legend(fontsize='x-small')
+        # sdf = m.get_data()
+        # axsam.errorbar(b_avgdf.q, b_avgdf.I, fmt='-', color = 'black')
 
 def kratky_plot(m, **kwargs):
 

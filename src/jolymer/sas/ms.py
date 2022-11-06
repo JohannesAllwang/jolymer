@@ -13,6 +13,19 @@ from .beaucage import beaucage
 from matplotlib.backends.backend_pdf import PdfPages
 
 
+def binArray(data, axis, binstep, binsize, func=np.nanmean):
+    data = np.array(data)
+    dims = np.array(data.shape)
+    argdims = np.arange(data.ndim)
+    argdims[0], argdims[axis] = argdims[axis], argdims[0]
+    data = data.transpose(argdims)
+    data = [func(np.take(data, np.arange(int(i*binstep),
+            int(i*binstep+binsize)), 0), 0)
+            for i in np.arange(dims[axis]//binstep)]
+    data = np.array(data).transpose(argdims)
+    return data
+
+
 class Ms:
 
     def __init__(self, ms):
@@ -31,12 +44,15 @@ class Ms:
         if 'xlim' in kwargs:
             xlim = kwargs.pop('xlim')
             ax.set_xlim(*xlim)
+        ax.tick_params(axis="x", bottom=True, top=True, labelbottom=True, labeltop=False)
+        ax.tick_params(axis="y", left=True, right=True, labelleft=True, labelright=False)
         return ax, kwargs
 
     def fits(self, fits=True, shiftby=1, dataqmin=0, dataqmax=2300, **kwargs):
         ax, kwargs = self.make_plot(**kwargs)
         shift = shiftby**len(self.ms)
         for m in self.ms:
+            # print(m.label)
             dfall = m.get_data(cout=False)
             df = dfall[m.dataqmin: m.dataqmax]
             ax.errorbar(df.q, df.I * shift, df.err_I * shift, marker=m.marker,
@@ -55,8 +71,8 @@ class Ms:
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.legend(fontsize='xx-small')
-        ax.set_xlabel('$q$ [1/nm]')
-        ax.set_ylabel('$I$ [1/cm]')
+        ax.set_xlabel('$q \\,\\mathrm{[nm^{-1}]}$')
+        ax.set_ylabel('$I \\,\\mathrm{[cm^{-1}]}$')
 
     def data(self, shiftby=1, **kwargs):
         return self.fits(fits=False, shiftby=shiftby, **kwargs)
@@ -87,8 +103,14 @@ class Ms:
         ax, kwargs = self.make_plot(**kwargs)
         for m in self.ms:
             df = m.get_data(cout=False)[m.iqmin:m.iqmax]
+            xdata = df.q
+            ydata = 1000 * df.I * df.q**2
+            if 'binnum' in kwargs:
+                binnum = kwargs.pop('binnum')
+                xdata = binArray(df.q, 0, binnum, binnum)
+                ydata = 1000 * binArray(df.I, 0, binnum, binnum) * xdata**2
             label = m.label
-            ax.errorbar(df.q, df.q**2 * df.I * 1000,  marker=m.marker, color=m.color,
+            ax.errorbar(xdata, ydata, marker=m.marker, color=m.color,
                         linestyle='', label=label, elinewidth=0.2, **kwargs)
             # ax.legend()
             ax.legend(fontsize='xx-small')
@@ -96,7 +118,7 @@ class Ms:
             # ax.grid()
             ax.set_ylim(0,5)
             ax.set_xlim(0, 2.5)
-            ax.set_xlabel('$q$ [1/nm]')
+            ax.set_xlabel('$q \\,\\mathrm{[nm^{-1}]}$')
             #         axes[0][1].set_xlabel('$q$ [1/nm]')
             ax.set_ylabel('$I\\cdot q^2 \\mathrm{\\,[0.001nm^{-2}cm^{-1}]}$')
 
@@ -105,15 +127,16 @@ class Ms:
         for m in self.ms:
             df = m.get_data(cout=False)[m.iqmin:m.iqmax]
             label = m.label
-            ax.errorbar(df.q, df.q**3 * df.I,  marker=m.marker, color=m.color,
+            ax.errorbar(df.q, df.q**3 * df.I * 10_000,  marker=m.marker, color=m.color,
                         linestyle='', label=label, elinewidth=0.2, **kwargs)
             #             ax.annotate(m.partext, xy=(0.0, 0.0), xycoords='axes fraction')
             # ax.grid()
             ax.set_ylim(0,0.0025)
             ax.set_xlim(0, 0.6)
-            ax.set_xlabel('$q$ [1/nm]')
+            ax.set_xlabel('$q \\,\\mathrm{[nm^{-1}]}$')
             #         axes[0][1].set_xlabel('$q$ [1/nm]')
             ax.set_ylabel('$I\\cdot q^3 \\mathrm{\\,[nm^{-3}cm^{-1}]}$')
+            ax.set_ylabel('$I\\cdot q^3 \\mathrm{\\,[A.U.]}$')
         ax.legend(fontsize='xx-small')
 
     def debye(self, **kwargs):

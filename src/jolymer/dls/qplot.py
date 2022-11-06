@@ -67,17 +67,22 @@ def plot_par(m, par, fit=None, ax=None, **kwargs):
     ax.plot(df_sls.q, df_sls.Isample, **kwargs)
 
 
-def rayley(m1, m2, m3, ax=None, **kwargs):
+def rayley(m1, m2, m3, times=1, fit=repes, **kwargs):
     ax, kwargs = make_plot(kwargs)
     # df = m1.get_rayley_ratio(m_buffer, m_toluene)
     df1 = m1.get_sls()
     df2 = m2.get_sls()
     df3 = m3.get_sls()
+    dfbeta = fit.get_phidlstable(m1)
+    # print(dfbeta)
     df1mod = df1[df1.q.isin(df2.q)].set_index('angle')
     df2mod = df2[df2.q.isin(df1.q)].set_index('angle')
+    # print(df2mod.index)
     df3mod = df3[df3.q.isin(df2mod.q)].set_index('angle')
-    xdat = df3mod.q / 1e6
-    ydat = (df1mod.Isample - df2mod.Isample) / df3mod.Isample
+    dfbetamod = dfbeta[dfbeta.phi.isin(df2mod.index)].set_index('phi')
+    beta = dfbetamod.beta
+    xdat = df3mod.q / 1e9
+    ydat = beta*times*0.01 *(df1mod.Isample - df2mod.Isample) / df3mod.Isample
     ax.plot(xdat, ydat, **kwargs)
     return ax
 
