@@ -9,83 +9,63 @@ Created on Tue Oct 20 16:52:47 2020
 from .. import database_operations as dbo
 import pandas as pd
 import numpy as np
-import datetime as dt
+# import datetime as dt
 import os
 from os.path import join
 import matplotlib.pyplot as plt
-from scipy import optimize, constants
+from scipy import constants
 from .. import Sample
 from ..Measurement import Measurement
 from .. import os_utility as osu
-from . import repes_utility
 from . import repes_utility as ru
+from dataclasses import dataclass, field
 
 
+@dataclass
 class lsi(Measurement):
 
-    # def __init__(self, )
+    color: str = '#000000'
+    exceptions: list[int] = field(default_factory=list)
 
-    def __init__(self, lsi_id, instrument='lsi', evaluate_script=True):
+    def __post_init__(self):
+        self.lol = 'lol'
+
+    def __init__(self, path, filename,
+                 TC, allangles, seq_numbers,
+                 per_angle, sample=None,
+                 lsid='X', samplestring=None,
+                 datestring='XX.XX.XXXX',
+                 exceptions=[],
+                 badangles=[], mode='X',
+                 instrument='lsi'):
+
+        self.filename = filename
+        self.path = path
+        self.per_angle = per_angle
+        self.TC = TC
+        self.allangles = allangles
+        self.angles = allangles
+        self.seq_numbers = seq_numbers
         self.instrument = instrument
-        with dbo.dbopen() as c:
-            query = f"""SELECT id, mdate, filename, sample, mode, comment
-            FROM {self.instrument}_measurements WHERE id=?"""
-            c.execute(query, (lsi_id,))
-            self.id, self.datestring, self.filename, self.samplestring, self.mode, self.comment = list(c.fetchone())
-            c.execute(f"SELECT * FROM {self.instrument}_exceptions WHERE {self.instrument}_id=?", (lsi_id,))
-            exceptions = list(c.fetchall())
-            self.exceptions = [e[1] for e in exceptions]
-            c.execute(f"SELECT * FROM {self.instrument}_badangles WHERE {self.instrument}_id=?", (lsi_id,))
-            badangles = list(c.fetchall())
-            self.badangles = [phi[1] for phi in badangles]
+        self.id = lsid
+        self.datestring = datestring
+        self.samplestring = samplestring
+        self.mode = mode
+        self.comment = ''
+        self.exceptions = exceptions
+        self.badangles = badangles
 
-        self.figures_path = join(Measurement.figures_path, f'{self.instrument}_{self.id}')
-        osu.create_path(self.figures_path)
-        # osu.create_path(self.phidls_path)
-        try:
-            self.continnice = True if 'continnice' in os.listdir(self.figures_path) else False
-        except:
-            self.continnice = False
-            print('No self.figures path yet...')
-
-        if self.samplestring == None:
+        if sample is not None:
+            self.sample = sample
+        elif self.samplestring is None:
             self.sample = None
         else:
+            print(samplestring)
             sample_type, sample_id = self.samplestring.split('_')
             self.sample = Sample.get_sample(sample_type, sample_id)
 
-        self.path = os.path.join(self.rawdatapath, 'dls', f'{self.datestring}')
-        self.phidls_path = join(self.rawdatapath, 'phidls',
-                                f'{self.datestring}_{self.filename}')
+        self.phidls_path = join(self.path, 'phidls')
         osu.create_path(self.phidls_path)
-        if evaluate_script:
-            script_df = pd.read_csv(f'{self.path}/{self.filename}.lsiscript', sep='\t', names=['index', 'start_angle', 'end_angle'
-                                                                ,'step_angle', 'per_angle', 'sec', 'TODO1',
-                                                                'TODO2', 'TODO3', 'TC'], index_col=0)
-            Tlist = [x for x in set(script_df.TC)]
-            Tlist.sort()
-            self.TCs = Tlist
-            self.smin = 1
-            self.Tdict = {}
-
-            seq_number = self.smin
-            print('Use function self.get_scriptrow(i) with the followning:')
-            for index, row in script_df.iterrows():
-                print(self.samplestring)
-                allangles = range(int(row.start_angle), int(row.end_angle+1), int(row.step_angle))
-                allangles = np.array(allangles)
-                seq_numbers = list(range(seq_number, int(row.per_angle)*len(allangles)+1 + seq_number))
-                # print(seq_number, row.per_angle)
-                # print(seq_numbers)
-                oneT = _oneT(row.TC, allangles, seq_numbers, row.per_angle, self.id, index, instrument=self.instrument)
-                self.Tdict[index] = oneT
-                seq_number += int(row.per_angle)*len(allangles)
-                print(f'({index}) : {row.TC}')
-            print(self.Tdict)
-            self.smax = seq_number
-
-            self.seq_numbers = range(int(self.smin), int(self.smax)+1)
-            # self.exceptions = [float(e) for e in exceptions]
 
         self.rmin = 2e-9
         self.rmax = 2_000e-9
@@ -93,22 +73,100 @@ class lsi(Measurement):
         if os.path.exists(self.rawdata_filename('0')):
             self.seq_numbers = [x-1 for x in self.seq_numbers]
         self.name = f'{self.instrument}{self.id}'
-        # return self.Tdict
+
+    @classmethod
+    def from_scriptfile(cls, scriptpath, scriptfile, scriptrow,
+                        path=None, filename=None, smin=1,
+                        **kwargs):
+        if scriptfile.split('.')[-1] != 'lsiscript':
+            scriptfile = f'{scriptfile}.lsiscript'
+        if path is None:
+            path = scriptpath
+        if filename is None:
+            filename = scriptfile[:-10]
+        script_filepath = join(scriptpath, scriptfile)
+        script_df = pd.read_csv(script_filepath, sep='\t',
+                                names=[
+                                    'index', 'start_angle',
+                                    'end_angle', 'step_angle',
+                                    'per_angle', 'sec', 'TODO1',
+                                    'TODO2', 'TODO3', 'TC'],
+                                index_col=0)
+        seq_number = smin
+        for index, row in script_df.iterrows():
+            allangles = range(int(row.start_angle),
+                              int(row.end_angle+1),
+                              int(row.step_angle))
+            allangles = np.array(allangles)
+            firstseq = seq_number
+            lastseq = int(row.per_angle)*len(allangles)\
+                + 1 + seq_number
+            seq_numbers = list(range(firstseq, lastseq))
+            seq_number += int(row.per_angle)*len(allangles)
+            TC = row.TC
+            per_angle = row.per_angle
+            if index == scriptrow:
+                break
+        m = cls(path, filename,
+                TC, allangles, seq_numbers,
+                per_angle, **kwargs)
+        return m
+
+    @classmethod
+    def from_db(cls, lsi_id, instrument='lsi',
+                scriptrow=0, **kwargs):
+        # self.instrument = instrument
+        with dbo.dbopen() as c:
+            query = f"""
+            SELECT id, mdate, filename, sample, mode, comment
+            FROM {instrument}_measurements WHERE id=?"""
+            c.execute(query, (lsi_id,))
+            id, datestring, filename, samplestring, mode,\
+                comment = list(c.fetchone())
+            c.execute(f"""
+                       SELECT * FROM {instrument}_exceptions
+                       WHERE {instrument}_id=?""",
+                      (lsi_id,))
+            exceptions = list(c.fetchall())
+            exceptions = [e[1] for e in exceptions]
+            c.execute(f"""
+                       SELECT * FROM {instrument}_badangles
+                       WHERE {instrument}_id=?""",
+                      (lsi_id,))
+            badangles = list(c.fetchall())
+            badangles = [phi[1] for phi in badangles]
+
+        path = os.path.join(cls.rawdatapath, 'dls', f'{datestring}')
+        scriptfile = f'{path}/{filename}.lsiscript'
+        m = cls.from_scriptfile(path, scriptfile, scriptrow,
+                                lsid=lsi_id, mode=mode,
+                                samplestring=samplestring,
+                                datestring=datestring,
+                                exceptions=exceptions,
+                                badangles=badangles,
+                                instrument=instrument, **kwargs)
+        m.id = lsi_id
+        m.datestring = datestring
+        m.phidls_path = join(m.rawdatapath, 'phidls',
+                             f'{datestring}_{filename}')
+        m.figures_path = join(Measurement.figures_path,
+                              f'{instrument}_{id}')
+        osu.create_path(m.figures_path)
+        osu.create_path(m.phidls_path)
+        m.name = f'{m.instrument}{m.id}_{int(scriptrow)}'
+        return m
 
     def get_filename(self, seq_number):
         return self.filename.replace('#', str(seq_number))
 
     def get_fitpath(self, model):
-        out = os.path.join(self.path, f'{model.name}_{self.instrument}_{self.id}')
+        out = os.path.join(self.path,
+                           f'{model.name}_{self.instrument}_{self.id}')
         return out
 
     def get_fitfile(self, model, seq_number):
-        out = os.path.join(self.get_fitpath(model),\
-                self.get_filename(seq_number))
-        return out
-
-    def get_rawdatapdffilename(fitname):
-        out = os.path.join(m.figures_path, f'{fitname}_rawdata.pdf')
+        out = os.path.join(self.get_fitpath(model),
+                           self.get_filename(seq_number))
         return out
 
     def get_scriptrow(self, i):
@@ -130,23 +188,11 @@ class lsi(Measurement):
         n = float(n)
         return n
 
-    def get_rayleigh_ratio(self, **kwargs):
-        """
-        Calculates the rayleigh ratio using a solvent measurement and a standard.
-
-        pars:
-        solvent : solvent measurement lsi object
-        standard : lsi object with the data for (usually) toluene
-
-        returns:
-        dataframe q, I, err_I
-        """
-        transmission = Istd_abs / Istd
-        out = (Isolution - Isolvent) * transmission
-        return out
-
     def get_TK(self):
-        return self.TC + 273.15
+        return self.get_TC() + 273.15
+
+    def get_TC(self):
+        return self.TC
 
     def get_wl(self):
         wl = self.get_metadata(1, "Wavelength (nm)")
@@ -209,9 +255,10 @@ class lsi(Measurement):
         if 'xmax' in kwargs:
             xmax = kwargs.pop('xmax')
         else:
-            xmax = 170 if self.mode=='mod3d' else 221
+            xmax = 170 if self.mode == 'mod3d' else 221
         filename = self.rawdata_filename(seq_number)
-        df = pd.read_csv(filename, sep='\s+', skiprows=16+xmin, nrows=xmax-xmin,
+        df = pd.read_csv(filename, sep='\s+',
+                         skiprows=16+xmin, nrows=xmax-xmin,
                          header=None, names=['t', 'g2'], engine='python')
         return df
 
@@ -221,46 +268,54 @@ class lsi(Measurement):
         """
         filename = self.rawdata_filename('')
         # Scattering angle   Mean_CR * sin(angle) / Laser Intensity (kHz/mW)
-        # g2(t=0)-1    CR CHA (kHz)    CR CHB (kHz)    Temperature (K)    Laser intensity (mW) Hydrodynamic Radius (nm) Width (nm)
-        df = pd.read_csv(filename, sep='\t', skiprows=1, header=None, names=['angle', 'I', 'g20', 'CRA', 'CRB', 'TK', 'I0', 'rh', 'width'])
+        # g2(t=0)-1    CR CHA (kHz)    CR CHB (kHz)    Temperature (K)
+        # Laser intensity (mW) Hydrodynamic Radius (nm) Width (nm)
+        df = pd.read_csv(filename, sep='\t', skiprows=1, header=None,
+                         names=['angle', 'I', 'g20', 'CRA', 'CRB',
+                                'TK', 'I0', 'rh', 'width'])
         # Sequence number is not in the file so we find it from the index:
         if os.path.exists(self.rawdata_filename('0')):
             df['seq_number'] = range(len(df))
         else:
             df['seq_number'] = range(1, len(df)+1)
         # select only rows that correspond to self
-        mask = df.seq_number.apply(lambda x: any(item for item in self.seq_numbers if item == x))
+        mask = df.seq_number.apply(
+                lambda x: any(item for item in self.seq_numbers if item == x))
         df = df[mask]
         return df
 
     def get_sls(self, buf=None, toluene=None):
-        df_summary = self. get_summary()
-        dict_sls = {'angle' : self.angles,
-                'q' : [self.q(phi) for phi in self.angles],
-                # 'g20' : [],
-                'CRA' : [],
-                'CRB' : [],
-                'I0' : [],
-                'Isample' : [],
-                # 'err_g20' : [],
-                'err_CRA' : [],
-                'err_CRB' : [],
-                'err_I0' : [],
-                'err_Isample' : []
-                }
+        df_summary = self.get_summary()
+        dict_sls = {'angle': self.angles,
+                    'q': [self.q(phi) for phi in self.angles],
+                    # 'g20' : [],
+                    'CRA': [],
+                    'CRB': [],
+                    'I0': [],
+                    'Isample': [],
+                    # 'err_g20' : [],
+                    'err_CRA': [],
+                    'err_CRB': [],
+                    'err_I0': [],
+                    'err_Isample': []}
         for angle in self.angles:
-            g20s = []
+            # g20s = []
             CRAs = []
             CRBs = []
             I0s = []
             Isamples = []
             for seq in self.phirange(angle):
-                # g20s.append(float(df_summary.loc[df_summary.seq_number == seq].g20))
+                # g20s.append(float(
+                #   df_summary.loc[df_summary.seq_number == seq].g20))
                 # print(df_summary.loc[df_summary.seq_number == seq].CRA)
-                CRAs.append(float(df_summary.loc[df_summary.seq_number == seq].CRA))
-                CRBs.append(float(df_summary.loc[df_summary.seq_number == seq].CRB))
-                I0s.append(float(df_summary.loc[df_summary.seq_number == seq].I0))
-                Isamples.append(float(df_summary.loc[df_summary.seq_number == seq].I))
+                CRAs.append(float(
+                    df_summary.loc[df_summary.seq_number == seq].CRA))
+                CRBs.append(float(
+                    df_summary.loc[df_summary.seq_number == seq].CRB))
+                I0s.append(float(
+                    df_summary.loc[df_summary.seq_number == seq].I0))
+                Isamples.append(float(
+                    df_summary.loc[df_summary.seq_number == seq].I))
             # dict_sls['g20'].append(np.mean(g20s))
             dict_sls['CRA'].append(np.mean(CRAs))
             dict_sls['CRB'].append(np.mean(CRBs))
@@ -270,7 +325,7 @@ class lsi(Measurement):
             dict_sls['err_CRA'].append(np.std(CRAs))
             dict_sls['err_CRB'].append(np.std(CRBs))
             dict_sls['err_I0'].append(np.std(I0s))
-            dict_sls['err_Isample'].append(np.std(Isamples))  # beta correction?
+            dict_sls['err_Isample'].append(np.std(Isamples))  # beta correction
         df = pd.DataFrame(dict_sls)
         if buf is None:
             return df
@@ -325,8 +380,8 @@ class lsi(Measurement):
 
     def get_moA(self, angle, A='A'):
         filename = self.get_phidls_filename(angle, end=f'mo{A}')
-        outdict = {'peaks':[],
-                'subpeaks':[]}
+        outdict = {'peaks': [],
+                   'subpeaks': []}
         with open(filename) as f:
             for line in f:
                 whatpeaks = 'peaks'
@@ -408,7 +463,7 @@ class lsi(Measurement):
         TK = self.get_TK()
         visc = self.get_visc()
         out = constants.Boltzmann*TK / \
-                (6*np.pi*visc*rh)
+            (6*np.pi*visc*rh)
         return out
 
     def tfromR(self, rh, qq):
@@ -416,37 +471,37 @@ class lsi(Measurement):
         return 1 / (D * qq)
 
     def q(self, phi):
-        "calculates the scattering vector q[m^-1] from the scattering angle 2\Theta."
+        "calculates the scattering vector q[m^-1] from the scattering angle 2\\Theta."
         wl = self.get_wl()
         n = self.get_n()
-        out = n *4* np.pi *np.sin((phi*np.pi/360))/wl
+        out = n * 4 * np.pi * np.sin((phi*np.pi/360))/wl
         return out
 
     def qq(self, phi):
-        "calculates the square of scattering vector q^2[m^-2] from the scattering angle 2\Theta."
+        """
+        calculates the square of scattering vector q^2[m^-2]
+        from the scattering angle 2\\Theta.
+        """
         return self.q(phi)**2
-
-    # def get_visc(self):
-    #     return self.sample.get_viscosity(self.get_TK())
 
     def plot_data(self, seq_number, ax=None, **kwargs):
         """
         This should most likely not be a function of the lsi class.
         """
-        if ax==None:
+        if ax is None:
             fig, ax = plt.subplots()
             ax.set_xlabel('$\\tau$ [s]')
             ax.set_ylabel('$g_2-1$')
         if 'marker' not in kwargs:
-            kwargs['marker']='.'
+            kwargs['marker'] = '.'
         if 'linestyle' not in kwargs:
-            kwargs['linestyle']=''
+            kwargs['linestyle'] = ''
         df = self.get_data(seq_number)
 
         # Autocorrelation Plots:
-        ax.plot(df.t, df.g2 , **kwargs)
+        ax.plot(df.t, df.g2, **kwargs)
         ax.set_xscale('log')
-        ax.set_ylim(0,1)
+        ax.set_ylim(0, 1)
         if self.mode == '3dcross':
             ax.set_ylim(0, 0.25)
         if self.mode == 'mod3d':
@@ -461,9 +516,9 @@ class lsi(Measurement):
         fitdf = fit.get_fit(self, seq_number)
         fitdf = fitdf[fitdf.fit < 1]
         ax.plot(fitdf.t, fitdf.fit, '-', color=fitcolor)
-        rescolor=fitcolor
+        rescolor = fitcolor
         if 'color' in kwargs:
-            rescolor=kwargs['color']
+            rescolor = kwargs['color']
         if showres:
             axres = ax.twinx()
             axres.plot(fitdf.t, fitdf.res, alpha=0.2, color=rescolor)
@@ -473,30 +528,30 @@ class lsi(Measurement):
 
     def plot_dist(self, seq_number, fit, ax=None, xspace='t', **kwargs):
         "plot distribution, if exists, in equal area representation."
-        if ax==None:
+        if ax is None:
             fig, ax = plt.subplots()
         dfd = fit.get_dist(self, seq_number)
-        if xspace=='rh':
+        if xspace == 'rh':
             # rapp in nm as xaxis
             ax.plot(dfd.rh * 10**9, dfd.dist, **kwargs)
-        elif xspace=='t':
+        elif xspace == 't':
             ax.plot(dfd.t, dfd.dist, **kwargs)
         ax.set_xscale('log')
         return ax
 
-    def qplot(self, fit, parameters, function=lambda x:x,
-              err_function=lambda x,err_x:err_x, ax=None, **kwargs):
-        if ax==None:
+    def qplot(self, fit, parameters, function=lambda x: x,
+              err_function=lambda x, err_x: err_x, ax=None, **kwargs):
+        if ax is None:
             fig, ax = plt.subplots()
             ax.set_ylabel(fit.pardict[parameters[0]][0])
             ax.set_xlabel("$q^2$ $\\mathrm{[\\mu m^{-2}]}$")
         if 'marker' not in kwargs:
-            kwargs['marker']='o'
+            kwargs['marker'] = 'o'
         if 'linestyle' not in kwargs:
-            kwargs['linestyle']=''
+            kwargs['linestyle'] = ''
 
         df = fit.get_phitable(self)
-        xdata=df.qq
+        xdata = df.qq
         args = [df[par] for par in parameters]
         ydata = function(*args)
         err_args = [df[f'err_{par}'] for par in parameters]
@@ -504,67 +559,3 @@ class lsi(Measurement):
         ax.errorbar(xdata, ydata, err_ydata, **kwargs)
         ax.set_xlim(left=0)
         return ax
-
-class lsi3d(lsi):
-
-    instrument = 'lsi3d'
-
-    def __init__(self, lsi_id, evaluate_script=True):
-        lsi.__init__(self, lsi_id, instrument='lsi3d', evaluate_script=evaluate_script)
-
-# def get_measurements(instrument, lsid, **kwargs):
-    # over_m is mainly for looking up the protocoll
-    # over_m = lsi.from_db(lsid, instrument=instrument)
-    # script_df = pd.read_csv(f'{over_m.path}/{over_m.filename}.lsiscript', sep='\t', names=['index', 'start_angle', 'end_angle'
-                                                                # ,'step_angle', 'per_angle', 'sec', 'TODO1',
-                                                                # 'TODO2', 'TODO3', 'TC'], index_col=0)
-    # Tlist = [x for x in set(script_df.TC)]
-    # Tlist.sort() # Why am I sorting?
-    # over_m.TCs = Tlist
-    # over_m.smin = 1 # ?
-    # over_m.Tdict = {}
-
-    # seq_number = over_m.smin
-    # print('Use function self.get_scriptrow(i) with the followning:')
-    # for index, row in script_df.iterrows():
-    #     allangles = range(int(row.start_angle), int(row.end_angle+1), int(row.step_angle))
-        # allangles = np.array(allangles)
-        # seq_numbers = list(range(seq_number, int(row.per_angle)*len(allangles)+1 + seq_number))
-        # oneT = _oneT(row.TC, allangles, seq_numbers, row.per_angle, self.id, index, instrument=self.instrument)
-        # over_m.Tdict[index] = oneT
-        # seq_number += int(row.per_angle)*len(allangles)
-        # print(f'({index}) : {row.TC}')
-    # over_m.smax = seq_number # This is a bit unnecesarry
-
-    # self.seq_numbers = range(int(self.smin), int(self.smax)+1)
-    # # self.exceptions = [float(e) for e in exceptions]
-
-#         self.rmin = 2e-9
-        # self.rmax = 2_000e-9
-        # self.filename += '_#.dat'
-        # if os.path.exists(self.rawdata_filename('0')):
-        #     self.seq_numbers = [x-1 for x in self.seq_numbers]
-        # self.name = f'{self.instrument}{self.id}'
-        # # return self.Tdict
-
-
-class _oneT(lsi):
-
-    def __init__(self, TC, allangles, seq_numbers, per_angle, lsi_id, script_row, instrument='lsi'):
-        self.seq_numbers= seq_numbers
-        if instrument == 'lsi':
-            lsi.__init__(self, lsi_id, evaluate_script=False)
-        elif instrument == 'lsi3d':
-            lsi3d.__init__(self, lsi_id, evaluate_script=False)
-        self.TC = TC
-        self.allangles = allangles
-        self.per_angle = per_angle
-        self.script_row = script_row
-        self.name = f'{self.instrument}{self.id}_{int(script_row)}'
-        self.angles = [phi for phi in self.allangles if phi not in self.badangles]
-
-    def get_TC(self):
-        return self.TC
-
-def get_oneT(mid, row=1, instrument='lsi3d'):
-    return lsi3d(mid, instrument=instrument).get_scriptrow(row)

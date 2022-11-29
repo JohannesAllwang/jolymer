@@ -4,6 +4,7 @@ import numpy as np
 import datetime as dt
 import os
 import matplotlib.pyplot as plt
+import matplotlib
 from scipy import optimize, constants
 from ..Sample import Sample
 from .. import plot_utility as plu
@@ -32,6 +33,12 @@ class Ms:
         self.ms = ms
         self.model = ms[0].model
 
+    def __index__(self, index):
+        return self.ms[index]
+
+    def __len__(self):
+        return len(self.ms)
+
     def make_plot(self, **kwargs):
         if 'ax' in kwargs:
             ax = kwargs.pop('ax')
@@ -55,9 +62,10 @@ class Ms:
             # print(m.label)
             dfall = m.get_data(cout=False)
             df = dfall[m.dataqmin: m.dataqmax]
-            ax.errorbar(df.q, df.I * shift, df.err_I * shift, marker=m.marker,
-                        color=m.color,
-                        linestyle='', label=m.label, elinewidth=0.2, **kwargs)
+            ax.errorbar(df.q, df.I*shift, df.err_I*shift,
+                        marker=m.marker, color=m.color,
+                        linestyle='', label=m.label,
+                        elinewidth=0.2, **kwargs)
             df = dfall[m.iqmin: m.iqmax]
             if fits:
                 m.fit_dict, m.fit_df = m.model.fit(m, bounds=m.bounds,
@@ -81,8 +89,10 @@ class Ms:
         if 'ax' in kwargs:
             ax = kwargs.pop('ax')
         else:
-            fig, ax = plt.subplots(nrows=1, ncols=1, figsize = (5, 4),
-                                     sharex=True, sharey=True, squeeze=True)
+            fig, ax = plt.subplots(nrows=1, ncols=1,
+                                   figsize = (5, 4),
+                                   sharex=True, sharey=True,
+                                   squeeze=True)
         if 'ylim' in kwargs:
             ylim=kwargs.pop('ylim')
         else:
@@ -167,7 +177,6 @@ class Ms:
         ax.errorbar(xdata, ydata, err_ydata, **kwargs)
         return ax
 
-
     def markdown_table(self, fixed_pars=[], e_pars=[], **kwargs):
         out = '| parameter |'
         for m in self.ms:
@@ -214,3 +223,39 @@ class Ms:
                 out += '{:.2f} \\pm {:.2f} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
             out += '\n'
         return out
+
+    def to_excel(self, fits=True, onlyraw=False,
+                 outpath='~/test_saxs_to_excel.xlsx',
+                 shiftby=10, **kwargs):
+        datadic = {}
+        fitdic = {}
+        colordic = {'labels': [m.label for m in self.ms],
+                    'color': [matplotlib.colors.to_hex(
+                        m.color) for m in self.ms]}
+        shift = shiftby ** len(self.ms)
+        for m in self.ms:
+            dfall = m.get_data(cout=False)
+            df = dfall[m.dataqmin: m.dataqmax]
+            datadic[f'{m.label}_q'] = df.q
+            datadic[f'{m.label}'] = df.I
+            datadic[f'{m.label}_err_I'] = df.err_I
+            m.fit_dict, m.fit_df = m.model.fit(
+                    m, bounds=m.bounds,
+                    iqmax=m.iqmax, p0=m.p0,
+                    iqmin=m.iqmin,
+                    fixed_parameters=m.fixed_pars)
+            fitdic[f'{m.label}_q'] = df.q
+            fitdic[f'{m.label}'] = df.I * shift
+            fitdic[f'{m.label}_err_I'] = df.err_I * shift
+            fitdic[f'{m.label}_q'] = m.fit_df.q * shift
+            fitdic[f'{m.label}_fit'] = m.fit_df.fit * shift
+            shift = shift / shiftby
+        df_data = pd.DataFrame(datadic)
+        df_color = pd.DataFrame(colordic)
+        df_fit = pd.DataFrame(fitdic)
+        df_par = self.get_results()
+        with pd.ExcelWriter(outpath) as writer:
+            df_data.to_excel(writer, sheet_name='data')
+            df_color.to_excel(writer, sheet_name='color')
+            df_fit.to_excel(writer, sheet_name='fit')
+            df_par.to_excel(writer, sheet_name='par')
