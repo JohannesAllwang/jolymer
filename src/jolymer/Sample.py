@@ -229,61 +229,6 @@ class BufferSample(Buffer):
         return cls(*values)
 
 
-class pps_Sample(Sample):
-
-    @classmethod
-    def from_db(cls, bid):
-        return cls(bid)
-
-    def __init__(self, id):
-        self.type = 'pps'
-        with dbo.dbopen() as c:
-            c.execute("SELECT * FROM pps_samples WHERE id=?", (id,))
-            values = c.fetchone()
-            self.id, self.datestring, protein_id, self.protein_concentration,\
-                polysaccharide_id, self.polysaccharide_concentration,\
-                    buffer_id, thermally_treated, self.comment, self.timestring = values
-        self.protein = Protein(protein_id)
-        self.polysaccharide = Polysaccharide(polysaccharide_id)
-        self.PS = self.polysaccharide
-        try:
-            self.buffer = Buffer(buffer_id)
-        except:
-            print('No buffer found')
-            self.buffer = None
-        if thermally_treated[0:2] == 'un':
-            self.istreated = False
-        elif thermally_treated[0:7] == 'treated':
-            self.istreated = True
-            self.treatment_time, temp = thermally_treated[7::].split('min')
-            if temp[-3::] == 'deg':
-                self.treatment_TC = float(temp[0:-3])
-            else:
-                print("Treatment temperature like this is not implemented...")
-
-    def get_NPname(self):
-        out = f'{self.PS.short_name}/{self.protein.short_name}'
-        return out
-
-    def get_NPbuffer(self):
-        npname = self.get_NPname()
-        out = f'{npname} pH {self.buffer.pH}'
-        return out
-
-
-class polymer_Sample(Sample):
-
-    def __init__(self, id):
-        with dbo.dbopen() as c:
-            c.execute("SELECT * FROM polymer_samples WHERE id=?", (id,))
-            values = c.fetchone()
-            self.id, self.datestring, polymer_id, self.polymer_concentration,\
-                    buffer_id, self.comment, self.timestring = values
-        self.polymer = None
-        print('polymers are not implemented')
-        self.buffer = Buffer(buffer_id)
-
-
 class mix_Sample(Sample):
 
     def __init__(self, id):
@@ -370,68 +315,6 @@ class GenericSample(Sample):
         Dalton = self.polymer.molecular_weight # g/mol
         molpl = gpl/Dalton
         return molpl
-
-
-class TresySample(Sample):
-
-    def __init__(self, tresy_id):
-
-        self.type = 'tresy_sample'
-        with dbo.dbopen() as c:
-            c.execute("SELECT * FROM tresy_samples WHERE id=?", (tresy_id,))
-            values = c.fetchone()
-        self.id, buffer_id, polysaccharide_id, polysaccharide_gpl, self.tt, loaded, self.comment = values
-        self.loaded = loaded
-        if loaded == 1:
-            self.loaded_dict = {
-                    'material' : 'curcumin',
-                    'gpl' : 0.1 }
-        self.datestring = "20210527"
-        self.protein = Protein(1)
-        self.protein_gpl = 1
-        self.PS = Polysaccharide(polysaccharide_id)
-        self.PS_gpl = polysaccharide_gpl
-        self.buffer = TresyBuffer(buffer_id)
-
-    def get_NPname(self):
-        out = f'{self.PS.short_name}/{self.protein.short_name}'
-        return out
-
-
-class TresyBuffer(Sample):
-
-    def __init__(self, buffer_id):
-        self.type = 'tresy_buffer'
-        with dbo.dbopen() as c:
-            c.execute("SELECT * FROM tresy_buffers WHERE id=?", (buffer_id,))
-            values = c.fetchone()
-        self.id, self.pH, self.salt_concentration = values
-
-    def get_viscosity(self, TK):
-        return visc_water(TK)
-
-    def get_n(self, TK, wl):
-        return n_water(TK, wl)
-
-
-class TryTrySample(Sample):
-
-    def __init__(self, ttid, datestring, buffer_id, ps_id, ps_gpl, comment):
-        self.id = ttid
-        self.datestring = datestring
-        self.buffer = BufferSample.from_db(buffer_id)
-        self.PS = Polysaccharide(ps_id)
-        self.PS_gpl = ps_gpl
-        self.comment = comment
-
-    @classmethod
-    def from_db(cls, ttid):
-        with dbo.dbopen() as c:
-            query = """SELECT id, datestring, buffer_id, ps_id, ps_gpl, comment
-            FROM trytry_samples WHERE id=?"""
-            c.execute(query, (ttid,))
-            values = c.fetchone()
-        return cls(*values)
 
 
 typedict = {

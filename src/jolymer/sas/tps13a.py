@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 from os.path import join
+from dataclasses import dataclass
 
 from .. import database_operations as dbo
 from .. import Sample as Sample
@@ -13,50 +14,10 @@ from .. import os_utility as osu
 
 from .SAXS_Measurement import SAXS_Measurement
 
-class Desy(SAXS_Measurement):
+@dataclass
+class TPS13A(SAXS_Measurement):
 
-    instrument = 'desy'
-
-    @classmethod
-    def setup(cls, values):
-        """
-        This method inserts the measurement into the database and creates the desired folderstructure.
-        """
-        # dbo.insert_values('desy_measurements', values)
-        did = values[0]
-        m = cls.__init__(m, did, issetup=False, count=False)
-        osu.create_path(os.path.join(m.path,'buffer'))
-        osu.create_path(m.frames_path)
-        osu.create_path(m.absolute_path)
-        osu.create_path(m.averaged_path)
-        osu.create_path(m.buffer_frames_path)
-        osu.create_path(m.buffer_absolute_path)
-        unsorted_path = os.path.join(m.rawdatapath, f'desy{m.datestring}')
-        osu.create_path(unsorted_path)
-
-    def __init__(self, desy_id, issetup=False, cout=True, **kwargs):
-        with dbo.dbopen() as c:
-            query = f"""SELECT id, measure_date, given_name, sample, comment, mtime
-            FROM desy_measurements WHERE id=?"""
-            c.execute(query, (desy_id,))
-            self.id, self.datestring, self.given_name, self.samplestring, self.comment, self.timestring = list(c.fetchone())
-        if cout:
-            print(self.samplestring)
-        if self.samplestring == None:
-            self.sample = None
-        else:
-            sample_type, sample_id = self.samplestring.split('_')
-            self.sample = Sample.get_sample(sample_type, sample_id)
-        self.path = os.path.join(self.rawdatapath, 'desy{0:03}/'.format(self.id))
-        self.processed_subtracted_file = os.path.join(self.path, 'processed_subtracted.dat')
-        self.processed_file = os.path.join(self.path, 'processed.dat')
-        self.frames_path = os.path.join(self.path, 'frames')
-        self.absolute_path = os.path.join(self.path, 'absolute')
-        self.averaged_path = os.path.join(self.path, 'averaged')
-        self.buffer_frames_path = os.path.join(self.path,'buffer', 'frames')
-        self.buffer_absolute_path = os.path.join(self.path,'buffer', 'absolute')
-        self.origpath = os.path.join(self.rawdatapath, f'desy{self.datestring}', 'datacollection', 'data', 'absolute')
-        # get the path of the
+    instrument = 'tps13a'
 
     def get_parameter(self, parstring):
         with open(self.get_filename()) as f:
@@ -94,7 +55,6 @@ class Desy(SAXS_Measurement):
             out.append(df)
             files.append(path)
         return out, files
-
 
     def get_absolute_fullpaths(self, buf=False):
         path=self.absolute_path
