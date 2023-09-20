@@ -7,9 +7,8 @@ import re
 from os.path import join
 import pandas as pd
 
-from sasmodels import compare, data, core
-import sasmodels.compare as sascomp
-import sasmodels.data as data
+from sasmodels import data, core
+# import sasmodels.compare as sascomp
 from sasmodels.bumps_model import Experiment, Model
 
 from .sas import SAXS_Model as sasmodel
@@ -60,7 +59,7 @@ class SasModel(sasmodel.SAXS_Model):
         fit_dict = {}
         if name is None:
             name = self.name
-        M = self. get_Experiment(m)
+        M = self.get_Experiment(m)
         with open(join(m.path, f'{name}.err')) as f:
             for line in f:
                 if len(line) < 2:
@@ -70,7 +69,9 @@ class SasModel(sasmodel.SAXS_Model):
                     par = split1[0].replace('.', '').replace(' ', '')
                     value = split1[1].split('in')[0]
                     value = float(value)
-                    M.parameters()[par].value = value
+                    try:
+                        M.parameters()[par].value = value
+                    except: pass
                     fit_dict[par] = value
                     fit_dict[f'std_{par}'] = 'fixed'
                 elif line[0] == '[':

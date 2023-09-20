@@ -40,13 +40,26 @@ def make_plot(kwargs):
     return ax, kwargs
 
 
-def constant_fit(xdata, ydata, kwargs):
-    pass
-
+def constant_fit(x, A):
+    return A*x/x
 
 def linear(x, A, B):
     return A*x + B
 
+def quadratic(x, A, B, C):
+    return A*x**2 + B*x + C
+
+def quadratic_intercept0(x, A, B):
+    return A*x**2 + B*x
+
+def get_qqfit(xdata, ydata, fitfunc=linear, bounds=[0, np.inf], **kwargs):
+    xdata_temp = xdata  # * 1e-14
+    popt, pcov = optimize.curve_fit(fitfunc, xdata_temp, ydata,
+                                    #  sigma=df.err_g2,
+                                    bounds=bounds)
+    # popt[0] = popt * 1e14
+    xdata = np.append(np.array([0]), xdata)
+    return popt, pcov
 
 def plot_qqfit(xdata, ydata, fitfunc=linear, bounds=[0, np.inf], **kwargs):
     ax, kwargs = make_plot(kwargs)
@@ -55,7 +68,7 @@ def plot_qqfit(xdata, ydata, fitfunc=linear, bounds=[0, np.inf], **kwargs):
                                     #  sigma=df.err_g2,
                                     bounds=bounds)
     # popt[0] = popt * 1e14
-    xdata = np.append(np.array([0]), xdata)
+    xdata = np.linspace(0, xdata[len(xdata)-1], num=1000)
     ax.plot(xdata, fitfunc(xdata, *popt), **kwargs)
     return popt, pcov
 
@@ -67,7 +80,8 @@ def plot_par(m, par, fit=None, ax=None, **kwargs):
     ax.plot(df_sls.q, df_sls.Isample, **kwargs)
 
 
-def rayley(m1, m2, m3, times=1, fit=repes, **kwargs):
+def rayley(m1, m2, m3, times=1, fit=repes, useq2=False,
+           qsquared=False, logI=False, **kwargs):
     ax, kwargs = make_plot(kwargs)
     # df = m1.get_rayley_ratio(m_buffer, m_toluene)
     df1 = m1.get_sls()
@@ -81,13 +95,32 @@ def rayley(m1, m2, m3, times=1, fit=repes, **kwargs):
     df3mod = df3[df3.q.isin(df2mod.q)].set_index('angle')
     dfbetamod = dfbeta[dfbeta.phi.isin(df2mod.index)].set_index('phi')
     beta = dfbetamod.beta
-    xdat = df3mod.q / 1e9
+    if 'set_beta' in kwargs:
+        set_beta = kwargs.pop( 'set_beta' )
+        beta = np.ones(beta.shape)*set_beta
+    if 'qunit' in kwargs:
+        unit = kwargs.pop( 'qunit' )
+        if unit == 'nm':
+            xdat = df3mod.q / 1e9 # nm
+        elif unit == 'mum':
+            xdat = df3mod.q / 1e6 # nm
+    else:
+        xdat = df3mod.q
+    if qsquared:
+        xdat = xdat**2
     ydat = beta*times*0.01 *(df1mod.Isample - df2mod.Isample) / df3mod.Isample
-    ax.plot(xdat, ydat, **kwargs)
-    return ax
+    err_ydat = ydat * (df1mod.err_Isample/df1mod.Isample + df2mod.err_Isample/df2mod.Isample + df3mod.err_Isample/df3mod.Isample)
+    if logI:
+        percent_err = err_ydat / ydat
+        ydat = np.log(ydat)
+        err_ydat = ydat * percent_err
+    if useq2:
+        xdat=xdat**2 *1e6 #mum
+    ax.errorbar(xdat, ydat,yerr=err_ydat, **kwargs)
+    return ax, (xdat, ydat, err_ydat)
 
 
-def guinier(m1, m2, m3, ax=None, **kwargs):
+def guinier(m1, m2, m3, **kwargs):
     ax, kwargs = make_plot(kwargs)
     df1 = m1.get_sls()
     df2 = m2.get_sls()
@@ -97,8 +130,9 @@ def guinier(m1, m2, m3, ax=None, **kwargs):
     df3mod = df3[df3.q.isin(df2mod.q)].set_index('angle')
     rayley_ratio = (df1mod.Isample - df2mod.Isample) / df3mod.Isample
     xdat = df3mod.q ** 2 / 1e18
-    ydat = np.log(rayley_ratio)
+    ydat = rayley_ratio
     ax.plot(xdat, ydat, **kwargs)
+    ax.set_yscale('log')
     return ax
 
 
@@ -136,3 +170,5 @@ def beta(m, fit=repes, **kwargs):
     ax.errorbar(xdata, ydata, **kwargs)
     qqlabel(ax, '\\beta', unit=None)
     return ax, (xdata, ydata)
+
+

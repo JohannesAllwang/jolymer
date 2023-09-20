@@ -12,7 +12,6 @@ import numpy as np
 from .. import database_operations as dbo
 
 
-
 class SAXS_Model:
 
     def __init__(self, name, longname, parameters, pardict, fitfunc):
@@ -22,7 +21,7 @@ class SAXS_Model:
         self.fitfunc = fitfunc
         self.pardict = pardict
 
-    def fit(self, measurement, X = 'q', Y = 'I', **kwargs):
+    def fit(self, measurement, X='q', Y='I', **kwargs):
         """
         fits the model and returns a dictionary
 
@@ -181,6 +180,10 @@ class SAXS_Model:
 
     def get_text(self, fit_dict={}):
         return ''
+
+    def markdown_table(self):
+        out = ''
+        return out
 
     def plot_I(self, xdat, pars, ax=None, **kwargs):
         ydat = self.fitfunc(xdat, *pars)

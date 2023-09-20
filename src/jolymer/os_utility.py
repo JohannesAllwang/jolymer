@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Mon Dec  7 13:15:52 2020
@@ -6,13 +5,41 @@ Created on Mon Dec  7 13:15:52 2020
 @author: johannes
 """
 
+from configparser import ConfigParser
 
 import os
 import sys
 import zipfile
 import shutil
 import subprocess
+import logging
 
+config = ConfigParser()
+
+# config["DEFAULT"] = {
+#     'datapath': '/home/johannes/data'
+#     }
+
+config.read(os.path.expanduser('~/.config/jolymer/jolymer.ini'))
+# config.get('measurement_path')
+config_data = config[ 'johannes' ]
+print(config_data.get('measurement_path'))
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+file_handler = logging.FileHandler(
+        os.path.expanduser('~/.local/share/jolymer/jolymer.log'))
+formatter = logging.Formatter("%(levelname)s %(message)s")
+file_handler.setFormatter(formatter)
+# file_handler.setLevel(logging.DEBUG)
+logger.addHandler(file_handler)
+
+# logging.basicConfig(
+#         level=logging.DEBUG,
+#         format="%(levelname)s %(message)s",
+#         filename=os.path.expanduser(
+#             '~/.local/share/jolymer/jolymer.log')
+#         )
 
 def unzip(source_filename, dest_dir):
     with zipfile.ZipFile(source_filename) as zf:
@@ -26,10 +53,10 @@ def create_path(path):
     try:
         os.mkdir(path)
     except OSError:
-        # print ("Creation of the directory %s failed" % path)
+        logging.info("Creation of the directory %s failed" % path)
         pass
     else:
-        # print ("Successfully created the directory %s " % path)
+        logging.info("Successfully created the directory %s " % path)
         pass
 
 

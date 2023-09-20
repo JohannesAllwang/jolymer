@@ -14,6 +14,7 @@ import numpy as np
 import datetime as dt
 from scipy import optimize, constants
 from pathlib import Path
+from dataclasses import dataclass
 
 def n_water(T, wl, rho=1000):
     """
@@ -118,7 +119,14 @@ class Polysaccharide:
         self.id, self.CAS_number, self.name, self.short_name, self.EC_number,\
             self.molecular_weight, self.reference_size, self.comment = values
 
+@dataclass
 class Sample:
+
+    id: str = 'X'
+    type: str = 'generic'
+    datestring: str = 'xxxx-xx-xx'
+    timestring: str = 'xx:xx'
+    # buffer: Sample = None
 
     def get_samplestring(self):
         return f'{self.type}_{self.id}'
@@ -134,8 +142,9 @@ class Sample:
             date = dt.datetime(year, month, day, hour=hour, minute=minute)
             return date, True
         else:
-            date = df.date(year, month, day)
-            return date, False
+            # date = df.date(year, month, day)
+            # return date, False
+            print('Error')
 
     def get_pHmeasurements(self):
         query = f"""

@@ -226,8 +226,8 @@ class REPES(Cun):
     def get_moA(self, m, phi, **kwargs):
         return m.get_moA(phi, **kwargs)
 
-    def get_average_tau(self, m, phi, mean='log', rmin=0, rmax=np.inf):
-        df = m.get_Arl(phi, rmin=rmin, rmax=rmax)
+    def get_average_tau(self, m, phi, mean='log', rmin=0, rmax=np.inf, A='A'):
+        df = m.get_Arl(phi, rmin=rmin, rmax=rmax, A=A)
         if mean == 'log':
             out = np.sum(df.dist * np.log(df.t)) / np.sum(df.dist)
             out = np.exp(out)
@@ -235,8 +235,8 @@ class REPES(Cun):
             out = np.sum(df.dist * df.t)
         return out
 
-    def get_rh(self, m, phi, mean='log', rmin=0, rmax=np.inf):
-        df = m.get_Arl(phi, rmin=rmin, rmax=rmax)
+    def get_rh(self, m, phi, mean='log', rmin=0, rmax=np.inf, A='A'):
+        df = m.get_Arl(phi, rmin=rmin, rmax=rmax, A=A)
         if mean == 'log':
             out = np.sum(df.dist * np.log(df.rapp)) / np.sum(df.dist)
             out = np.exp(out)

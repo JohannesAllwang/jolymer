@@ -1,0 +1,28 @@
+font.size: 8
+
+# axes.titlesize : 24
+# axes.labelsize : 20
+# lines.linewidth : 3
+# lines.markersize : 10
+# xtick.labelsize : 16
+# ytick.labelsize : 16
+
+figure.figsize : 3.3, 3
+
+# remove padding (white space around figure)
+figure.constrained_layout.use : True
+figure.constrained_layout.h_pad: 0.005
+figure.constrained_layout.w_pad: 0.005
+figure.constrained_layout.hspace: 0.005
+figure.constrained_layout.wspace: 0.005
+
+xtick.direction: in
+ytick.direction: in
+
+legend.frameon: False
+legend.fontsize: 6
+
+savefig.transparent: True
+# axes.prop_cycle: cycler('color', ['0D6986', '0000E0', 'D2998E', '86660D', '5B1A07' ]), cycler('marker', [o, <, >, *, 8])
+# axes.prop_cycle: cycler('color', [ '9ce0f5', '8ec7d2', '0d6986', '07485b', '042028'])
+axes.prop_cycle: cycler('marker', ['o', '<', '0000ff', '*', '8'])

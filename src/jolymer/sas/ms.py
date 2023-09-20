@@ -1,17 +1,9 @@
-from .. import database_operations as dbo
 import pandas as pd
 import numpy as np
-import datetime as dt
 import os
 import matplotlib.pyplot as plt
 import matplotlib
-from scipy import optimize, constants
-from ..Sample import Sample
-from .. import plot_utility as plu
-from . import sas_plotlib as splu
 from .beaucage import beaucage
-
-from matplotlib.backends.backend_pdf import PdfPages
 
 
 def binArray(data, axis, binstep, binsize, func=np.nanmean):
@@ -51,21 +43,34 @@ class Ms:
         if 'xlim' in kwargs:
             xlim = kwargs.pop('xlim')
             ax.set_xlim(*xlim)
-        ax.tick_params(axis="x", bottom=True, top=True, labelbottom=True, labeltop=False)
-        ax.tick_params(axis="y", left=True, right=True, labelleft=True, labelright=False)
+        ax.tick_params(axis="x", bottom=True, top=True,
+                       labelbottom=True, labeltop=False)
+        ax.tick_params(axis="y", left=True, right=True,
+                       labelleft=True, labelright=False)
         return ax, kwargs
 
-    def fits(self, fits=True, shiftby=1, dataqmin=0, dataqmax=2300, **kwargs):
+    def fits(self, fits=True, shiftby=1, dataqmin=0, dataqmax=2300,
+             error=True, **kwargs):
         ax, kwargs = self.make_plot(**kwargs)
         shift = shiftby**len(self.ms)
-        for m in self.ms:
-            # print(m.label)
+        if 'shifts' in kwargs:
+            shifts = kwargs.pop('shifts')
+        else:
+            shifts = [shift / (shiftby ** i) for i in range(len(self.ms))]
+        for i, m in enumerate(self.ms):
+            shift = shifts[i]
+            print(m.label, shift)
             dfall = m.get_data(cout=False)
             df = dfall[m.dataqmin: m.dataqmax]
-            ax.errorbar(df.q, df.I*shift, df.err_I*shift,
+            if error:
+                ax.errorbar(df.q, df.I*shift, df.err_I*shift,
+                            marker=m.marker, color=m.color,
+                            linestyle='', label=m.label,
+                            elinewidth=0.2, **kwargs)
+            else:
+                ax.plot(df.q, df.I*shift,
                         marker=m.marker, color=m.color,
-                        linestyle='', label=m.label,
-                        elinewidth=0.2, **kwargs)
+                        linestyle='', label=m.label, **kwargs)
             df = dfall[m.iqmin: m.iqmax]
             if fits:
                 m.fit_dict, m.fit_df = m.model.fit(m, bounds=m.bounds,
@@ -75,7 +80,6 @@ class Ms:
                 ax.errorbar(m.fit_df.q, m.fit_df.fit*shift, marker='',
                             color='black')
                 m.partext = m.model.get_text(m.fit_dict)
-            shift = shift / shiftby
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.legend(fontsize='xx-small')
@@ -90,7 +94,7 @@ class Ms:
             ax = kwargs.pop('ax')
         else:
             fig, ax = plt.subplots(nrows=1, ncols=1,
-                                   figsize = (5, 4),
+                                   figsize=(5, 4),
                                    sharex=True, sharey=True,
                                    squeeze=True)
         if 'ylim' in kwargs:
@@ -103,8 +107,8 @@ class Ms:
                     )
             df = m.fit_df
             ydata = df.res/df.err_I
-            ax.plot(df.q, ydata, marker = m.marker, color=m.color,
-                            linestyle='', label = label, **kwargs)
+            ax.plot(df.q, ydata, marker=m.marker, color=m.color,
+                    linestyle='', label=label, **kwargs)
         ax.legend(fontsize='xx-small')
         ax.set_ylabel('Normalized Residuals')
         ax.set_xlabel('$q\\mathrm{\\,[nm^{-1}]}$')
@@ -141,7 +145,7 @@ class Ms:
                         linestyle='', label=label, elinewidth=0.2, **kwargs)
             #             ax.annotate(m.partext, xy=(0.0, 0.0), xycoords='axes fraction')
             # ax.grid()
-            ax.set_ylim(0,0.0025)
+            ax.set_ylim(0, 0.0025)
             ax.set_xlim(0, 0.6)
             ax.set_xlabel('$q \\,\\mathrm{[nm^{-1}]}$')
             #         axes[0][1].set_xlabel('$q$ [1/nm]')
@@ -158,8 +162,13 @@ class Ms:
             par_dict[par] = []
             par_dict[f'std_{par}'] = []
             for m in self.ms:
-                par_dict[par].append(m.fit_dict[par])
-                par_dict[f'std_{par}'].append(m.fit_dict['std_'+par])
+                if par in m.fit_dict:
+                    par_dict[par].append(m.fit_dict[par])
+                    par_dict[f'std_{par}'].append(m.fit_dict['std_'+par])
+                else:
+                    par_dict[par].append(None)
+                    par_dict[f'std_{par}'].append(None)
+                    print(f'{par} not in fit_dict')
         self.df = pd.DataFrame(par_dict)
         return self.df
 
@@ -177,6 +186,31 @@ class Ms:
         ax.errorbar(xdata, ydata, err_ydata, **kwargs)
         return ax
 
+    # latex table creation by ChatGTP
+    # def write_latex_table(df, filepath):
+    #     # Open the file in write mode
+    #     with open(filepath, 'w') as f:
+    #         # Write the LaTeX table preamble
+    #         f.write('\\begin{tabular}{|')
+    #         f.write('|'.join(['c'] * len(df.columns)))
+    #         f.write('|}\n')
+    #         f.write('\\hline\n')
+
+    #         # Write the column names
+    #         f.write(' & '.join(df.columns))
+    #         f.write(' \\\\\n')
+    #         f.write('\\hline\n')
+
+    #         # Write the data
+    #         for _, row in df.iterrows():
+    #             f.write(' & '.join([str(x) for x in row]))
+    #             f.write(' \\\\\n')
+
+    #         # Write the LaTeX table closing
+    #         f.write('\\hline\n')
+    #         f.write('\\end{tabular}')
+
+
     def markdown_table(self, fixed_pars=[], e_pars=[], **kwargs):
         out = '| parameter |'
         for m in self.ms:
@@ -188,14 +222,15 @@ class Ms:
         for par in self.model.parameters:
             out += f'| {par} |'
             for m in self.ms:
-                print(m.fit_dict[f'std_{par}'])
-                if m.fit_dict[f'std_{par}'] == 'fixed':
+                if not f'std_{par}' in m.fit_dict:
+                    pass
+                elif m.fit_dict[f'std_{par}'] == 'fixed':
                     out += '{:.2e} fix |'.format(m.fit_dict[par])
                 elif par in e_pars:
                     print(m.fit_dict[f'std_{par}'])
                     out += '{:.2e} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
                 else:
-                    out += '{:.2f} ± {:.2f} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
+                    out += '{:.3g} ± {:.3g} |'.format(m.fit_dict[par], m.fit_dict['std_'+par])
             out += '\n'
         if 'beaucage_scale' in self.model.parameters:
             out += f'| beaucage_C |'
@@ -233,29 +268,36 @@ class Ms:
                     'color': [matplotlib.colors.to_hex(
                         m.color) for m in self.ms]}
         shift = shiftby ** len(self.ms)
-        for m in self.ms:
+        if 'shifts' in kwargs:
+            shifts = kwargs.pop('shifts')
+        else:
+            shifts = [shift / (shiftby ** i) for i in range(len(self.ms))]
+        for i, m in enumerate(self.ms):
+            shift = shifts[i]
             dfall = m.get_data(cout=False)
             df = dfall[m.dataqmin: m.dataqmax]
             datadic[f'{m.label}_q'] = df.q
             datadic[f'{m.label}'] = df.I
             datadic[f'{m.label}_err_I'] = df.err_I
-            m.fit_dict, m.fit_df = m.model.fit(
-                    m, bounds=m.bounds,
-                    iqmax=m.iqmax, p0=m.p0,
-                    iqmin=m.iqmin,
-                    fixed_parameters=m.fixed_pars)
-            fitdic[f'{m.label}_q'] = df.q
-            fitdic[f'{m.label}'] = df.I * shift
-            fitdic[f'{m.label}_err_I'] = df.err_I * shift
-            fitdic[f'{m.label}_q'] = m.fit_df.q * shift
-            fitdic[f'{m.label}_fit'] = m.fit_df.fit * shift
-            shift = shift / shiftby
+            if fits:
+                m.fit_dict, m.fit_df = m.model.fit(
+                        m, bounds=m.bounds,
+                        iqmax=m.iqmax, p0=m.p0,
+                        iqmin=m.iqmin,
+                        fixed_parameters=m.fixed_pars)
+                fitdic[f'{m.label}_q'] = df.q
+                fitdic[f'{m.label}'] = df.I * shift
+                fitdic[f'{m.label}_err_I'] = df.err_I * shift
+                fitdic[f'{m.label}_q_fit'] = m.fit_df.q
+                fitdic[f'{m.label}_I_fit'] = m.fit_df.fit * shift
         df_data = pd.DataFrame(datadic)
         df_color = pd.DataFrame(colordic)
-        df_fit = pd.DataFrame(fitdic)
-        df_par = self.get_results()
+        if fits:
+            df_fit = pd.DataFrame(fitdic)
+            df_par = self.get_results()
         with pd.ExcelWriter(outpath) as writer:
             df_data.to_excel(writer, sheet_name='data')
             df_color.to_excel(writer, sheet_name='color')
-            df_fit.to_excel(writer, sheet_name='fit')
-            df_par.to_excel(writer, sheet_name='par')
+            if fits:
+                df_fit.to_excel(writer, sheet_name='fit')
+                df_par.to_excel(writer, sheet_name='par')

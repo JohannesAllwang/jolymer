@@ -4,16 +4,14 @@ Created on Tue Dec 29 16:26:57 2020
 
 @author: xcill
 """
-import getpass
-
-from .. import database_operations as dbo
 import pandas as pd
 import numpy as np
 import datetime as dt
 import os
 from os.path  import join
 import matplotlib.pyplot as plt
-from scipy import optimize, constants
+from scipy import optimize, constants, signal
+
 from ..Sample import Sample
 from .. import plot_utility as plu
 # from .DLS_Measurement import DL
@@ -41,8 +39,8 @@ def _dat_compilation(m, seq_numbers, cm, labelfunc, ax=None, **kwargs):
     if 'title' in kwargs:
         title = kwargs.pop('title')
     for s, color in zip(seq_numbers, citer):
-        label=labelfunc(m, None, s)
-        ax=m.plot_data(s, ax=ax, color=color, label=label, **kwargs)
+        label = labelfunc(m, None, s)
+        ax = m.plot_data(s, ax=ax, color=color, label=label, **kwargs)
     ax.legend()
     ax.set_title(title)
     return ax
@@ -67,6 +65,23 @@ def _fit_compilation(m, seq_numbers, cm, labelfunc, title, ax=None, fit=None,
     ax.set_title(title)
     return ax
 
+def plot_res(m, phi, ax=None, fit=None, rapp=False, color='black', **kwargs):
+    if ax is None:
+        fig, ax = plt.subplots()
+    if fit is None:
+        df, dfs = m.get_average_g2(phi)
+    elif fit.name == 'repes':
+        df, dfs = m.get_average_g2(phi)
+        dfres = m.get_res(phi)
+        xdata = df.t
+        if rapp:
+            xdata = df.rapp
+    else:
+        df = dfres = fit.get_phidlsfit(m, phi)
+    ax.plot(dfres.t, dfres.res, color=color, **kwargs)
+    ax.set_ylabel('Relative residuals')
+    ax.set_ylim(-0.05, 0.05)
+    return ax
 
 def plot_phidls(m, phi, fitcolor='black', ax=None, showres=True, fit=None,
                 rapp=False, **kwargs):
@@ -83,7 +98,7 @@ def plot_phidls(m, phi, fitcolor='black', ax=None, showres=True, fit=None,
         if rapp:
             xdata = df.rapp
         ax.errorbar(xdata, df.g2, df.err_g2, **kwargs)
-        ax.errorbar(dfres.t, dfres.fit, color=fitcolor)
+        ax.errorbar(dfres.t, dfres.fit, color=fitcolor, linestyle='-', marker='')
     else:
         df = dfres = fit.get_phidlsfit(m, phi)
         ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
@@ -100,35 +115,48 @@ def plot_phidls(m, phi, fitcolor='black', ax=None, showres=True, fit=None,
     return ax
 
 
-def plot_phidls_dist(m, phi, ax=None, fit='repes',
-                     rapp=False, **kwargs):
+def plot_phidls_dist(m, phi, ax=None, fit='repes', max_is_one=False,
+                     rapp=False, A='A', **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     # if fit == 'contin':
     #     ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
     #     showres = False
     elif fit.name == 'repes':
-        df = m.get_Arl(phi)
+        df = m.get_Arl(phi, A=A)
         if rapp:
             xdata = df.rapp * 1e9
         else:
             xdata = df.t
-        ax.plot(xdata, df.dist, **kwargs)
+        if max_is_one:
+            ydata = df.dist / np.max(df.dist)
+        else:
+            ydata = df.dist
+        ax.plot(xdata, ydata, **kwargs)
     else:
-        df = dfres = fit.get_phidlsfit(m, phi)
+        df = fit.get_phidlsfit(m, phi)
         ax.errorbar(df.t, df.g2, df.err_g2, **kwargs)
     ax.set_xscale('log')
-    if 'color' in kwargs:
-        rescolor = kwargs['color']
     return ax
 
+def res_compilation(m, phis, cm, ax=None, fit=None,
+                    showlegend=True, legendargs={}, **kwargs):
+    citer = plu.cm_for_l(cm, phis)
+    for phi, color in zip(phis, citer):
+        label = f'{phi} °'
+        ax = plot_res(m, phi, fit=fit, ax=ax,
+                      color=color, label=label, **kwargs)
+    if showlegend:
+        ax.legend(**legendargs)
+    return ax
 
 def phidls_compilation(m, phis, cm, ax=None, fit=None,
                        showlegend=True, legendargs={}, **kwargs):
     citer = plu.cm_for_l(cm, phis)
     for phi, color in zip(phis, citer):
-        label = f'{phi} $^\\circ$'
-        ax = plot_phidls(m, phi, fit=fit, ax=ax, color=color, label=label, **kwargs)
+        label = f'{phi} °'
+        ax = plot_phidls(m, phi, fit=fit, ax=ax,
+                         color=color, label=label, **kwargs)
     if showlegend:
         ax.legend(**legendargs)
     # ax.set_title(title)
@@ -136,21 +164,26 @@ def phidls_compilation(m, phis, cm, ax=None, fit=None,
 
 
 def phidls_dist_compilation(m, phis, cm, ax=None, fit=None,
-                            showlegend=True, legendargs={}, **kwargs):
+                            showlegend=True, legendargs={},
+                            **kwargs):
     citer = plu.cm_for_l(cm, phis)
     for phi, color in zip(phis, citer):
-        label = f'{phi} $^\\circ$'
-        ax = plot_phidls_dist(m, phi, fit=fit, ax=ax, color=color, label=label, **kwargs)
+        label = f'{phi} °'
+        ax = plot_phidls_dist(m, phi, fit=fit, ax=ax,
+                              color=color, label=label, **kwargs)
     if showlegend:
         ax.legend(**legendargs)
     # ax.set_title(title)
     return ax
 
 
-
 def seq_compilation(m, seq_numbers, fit=None, **kwargs):
     print(fit)
-    return _fit_compilation(m, seq_numbers, 'viridis', seqlabel, None, fit=fit,
+    if 'labelfunc' in kwargs:
+        labelfunc = kwargs.pop('labelfunc')
+    else:
+        labelfunc = seqlabel
+    return _fit_compilation(m, seq_numbers, 'viridis', labelfunc, None, fit=fit,
                             **kwargs)
 
 
@@ -235,13 +268,17 @@ def _dist_compilation(m, seq_numbers, cm, labelfunc, title, ax=None, fit=None,
     return ax
 
 
-def dist_seq(m, seq_numbers, fit=None, xspace='t'):
-    fig, (axf, axd) = plt.subplots(nrows=2, figsize=(10, 10))
+def dist_seq(m, seq_numbers, fit=None, xspace='t', ax=None,
+             **kwargs):
+    if ax is None:
+        fig, (axf, axd) = plt.subplots(nrows=2, figsize=(10, 10))
+    else:
+        axd=ax
     axd = _dist_compilation(m, seq_numbers, 'viridis', seqlabel, None, fit=fit,
                             ax=axd, xspace=xspace)
-    axf = _fit_compilation(m, seq_numbers, 'viridis', seqlabel, None, fit=fit,
-                           ax=axf)
-    return fig, (axf, axd)
+    # axf = _fit_compilation(m, seq_numbers, 'viridis', seqlabel, None, fit=fit,
+    #                        ax=axf)
+    return axd
 
 
 def dist_phi(m, seq_numbers, xspace='t', figsize=(10, 10), xlim=None, fit=None,
@@ -281,8 +318,8 @@ def _raw_contin_page(m, phi, fit=None, per_plot=5, **kwargs):
 
     fig, ((axf1, axf2), (axd1, axd2)) = plt.subplots(nrows=2, ncols=2,
                                                      figsize=(12, 8))
-    axd1 = _dist_compilation(m, m.phirange(phi)[0:5], 'viridis', seqlabel, None, fit=fit,
-                             ax=axd1)
+    axd1 = _dist_compilation(m, m.phirange(phi)[0:5], 'viridis',
+                             seqlabel, None, fit=fit, ax=axd1)
     axd1.set_xlabel('$\\tau $ [s]')
     axd1.set_ylabel('$\\tau \\cdot G(\\tau) $ [s]')
     axd2 = _dist_compilation(m, m.phirange(phi)[5::], 'viridis', seqlabel,
@@ -299,10 +336,6 @@ def _raw_contin_page(m, phi, fit=None, per_plot=5, **kwargs):
 
 
 def contin_pdf(m, fit=None, filename=None):
-    # filename = os.path.join(m.path, f'contin_{m.script_row}_T{m.TC}.pdf')
-    # filename = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\figures\\contin_pdf\\{m.instrument}{m.id}T{int(round(m.TC))}_{m.script_row}.pdf"
-    # filename = os.path.join(m.figures_path,
-                # f'{m.instrument}_{m.id}_{fit.name}_{m.script_row}_T{m.TC}.pdf')
     if filename is None:
         filename = join(Measurement.figures_path, 'temp.pdf')
     osu.create_path(m.figures_path)
@@ -334,7 +367,7 @@ def qplot(m, fit, par, ax=None, plot_constant=False, plot_linear=False,
           **kwargs):
     df, constant_fit, linear_fit = get_full_df(m, fit, par)
     dfp = df[df.qq > 0]
-    if ax == None:
+    if ax is None:
         fig, ax = plt.subplots()
     if 'xlabel' in kwargs:
         ax.set_xlabel(kwargs.pop('xlabel'))
@@ -375,30 +408,36 @@ def compare_prob_rej(self, c, meas_num, method='one5'):
     uloz_list = []
     max_list = []
     phi = "TODO"
-    prob_rej = [['B', '.999'], ['C', '.99'], ['D', '.9'], ['A', '.5'], ['E', '.1'], ['F', '.01'], ['G', '.001'], ['H', '.0001']]
-    fig, axes = plt.subplots(nrows = 1, ncols = 2, figsize = (10,5))
+    prob_rej = [['B', '.999'], ['C', '.99'], ['D', '.9'],
+                ['A', '.5'], ['E', '.1'], ['F', '.01'],
+                ['G', '.001'], ['H', '.0001']]
+    fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
     ax, ax2 = axes
     for i, color in zip(prob_rej, iter(plt.cm.viridis(np.linspace(0, .9, 9)))):
-        df = pd.read_csv(self.Arl_file(c, meas_num, one = '_one5', A = i[0]), header = None, names = ['logtime', 'msdist'])
+        df = pd.read_csv(self.Arl_file(c, meas_num, one='_one5', A=i[0]),
+                         header=None, names=['logtime', 'msdist'])
         df['t'] = 0.001 * 10**df.logtime
         df['dist'] = 0.001 * df.msdist
-        ax.plot(df.t, df.dist, color = color, label = i[1])
-        uloz, peak_split = self.moa_reader(self.moA_file(c, meas_num, A = i[0], one = '_one5'))
-        peaks, _ = signal.find_peaks(df.dist, height = .000005)
+        ax.plot(df.t, df.dist, color=color, label=i[1])
+        uloz, peak_split = self.moa_reader(self.moA_file(c,
+                                                         meas_num,
+                                                         A=i[0],
+                                                         one='_one5'))
+        peaks, _ = signal.find_peaks(df.dist, height=.000005)
         maximum = df.loc[peaks]
-        maximum.reset_index(drop = True, inplace = True)
+        maximum.reset_index(drop=True, inplace=True)
 
         for j in uloz:
-            ax.plot([0.001 * j[1]], [-0.000_001], '*', color = color)
+            ax.plot([0.001 * j[1]], [-0.000_001], '*', color=color)
             if j[1] > 5 and j[1] < 10:
                 uloz_list.append(j[1])
 
         for j in peak_split:
-            ax.plot([0.001 * j[1]], [-0.000_003], "p", color = color)
+            ax.plot([0.001 * j[1]], [-0.000_003], "p", color=color)
             if j[1] > .005 and j[1] < 10:
                 uloz_list.append(j[1])
 
-        ax.plot(maximum.t, maximum.dist, 'X', color = color)
+        ax.plot(maximum.t, maximum.dist, 'X', color=color)
         for j in maximum.t:
             if j > .005 and j < 0.010:
 
@@ -406,21 +445,21 @@ def compare_prob_rej(self, c, meas_num, method='one5'):
 
     ax.set_xscale('log')
     ax.legend()
-    ax.set_title("Measurement " + str(meas_num) + ' Angle: ' + str(phi)+ '°')
+    ax.set_title("Measurement " + str(meas_num) + ' Angle: ' + str(phi)+'°')
     ax.set_xlabel("$\\tau$ [s]")
     ax.set_ylabel("$\\tau_Dw(\\tau_D)$ [s]")
 
-    ax2.plot(['.999',  '.99', '.9', '.5', '.1', '.01', '.001', '.0001'], uloz_list, label = '$\\left< \\tau_D \\right>$ [ms]')
-    ax2.plot(['.999',  '.99', '.9', '.5', '.1', '.01', '.001', '.0001'], max_list, label = 'maximum [ms]')
-    #ax2.set_xticks(range(len(prob_rej)), ['.999',  '.99', '.9', '.5', '.1', '.01', '.001', '.0001'])
+    ax2.plot(['.999',  '.99', '.9', '.5', '.1', '.01', '.001', '.0001'],
+             uloz_list, label='$\\left< \\tau_D \\right>$ [ms]')
+    ax2.plot(['.999',  '.99', '.9', '.5', '.1', '.01', '.001', '.0001'],
+             max_list, label='maximum [ms]')
     ax2.legend()
     ax2.set_xlabel('ProbRej.')
     ax2.set_ylabel('$\\tau_D$ [ms]')
     plt.tight_layout()
-    # plt.savefig('Plots/prob_rej_max_uloz' + str(measure_num) + sample['name'] +'.pdf')
 
 
-def gamma_star_plot(self, method, figure = None, sup_titeling = 'name', labeling = 'method', colormap = plt.cm.ocean(np.linspace(0,.9, 10)),
+def gamma_star_plot(self, method, figure=None, sup_titeling = 'name', labeling = 'method', colormap = plt.cm.ocean(np.linspace(0,.9, 10)),
                     fitname='linear', min_fit=0, max_fi=0):
     max_fit = len(self.angles) if max_fi==0 else max_fi
     if figure == None:

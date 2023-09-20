@@ -15,7 +15,7 @@ import colorsys
 tum_purple = '#69085a'
 tum_dblue = '#0f1b5f'
 tum_cyan = '#00778a'
-tum_dgreen = '#00778a'
+tum_dgreen = '#007c30'
 tum_green = '#679a1d'
 tum_yellow = '#ffdc00'
 tum_dyellow = '#f9ba00'
@@ -40,38 +40,48 @@ tum_a4 = '#98c6ea'
 tum_a5 = '#64a0c8'
 
 tum_colors = [
-    tum_purple,
     tum_dblue,
     tum_cyan,
     tum_dgreen,
     tum_green,
-    tum_yellow,
+    # tum_yellow,
     tum_dyellow,
     tum_orange,
     tum_red,
-    tum_dred]
+    tum_dred,
+    tum_purple]
 
 
 def loglog(ax):
+    """necessary?"""
     ax.set_yscale('log')
     ax.set_xscale('log')
 
 
 def alterhex(color):
+    """
+    Make a color class!
+    """
     return color.replace('#', '0x')
 
 
-
 def colormap(name, start, stop, num):
+    """
+    better use the cycler?
+    """
     cm = plt.get_cmap(name)
     listed = cm(np.linspace(start, stop, num))
     out = iter(listed)
     return out
-def cm_for_l(name, l, start=0.1, stop=0.9):
-    num = len(l)
+
+
+def cm_for_l(name, list, start=0.1, stop=0.9):
+    """
+    remove this?
+    """
+    num = len(list)
     return colormap(name, start, stop, num)
-def fromto_colormap(color1, color2, sth):
-    pass
+
 
 # top = tum_blues
 # bottom = cm.get_cmap('Blues', 128)

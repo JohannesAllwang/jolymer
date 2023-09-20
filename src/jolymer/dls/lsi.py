@@ -94,6 +94,7 @@ class lsi(Measurement):
                                 index_col=0)
         seq_number = smin
         for index, row in script_df.iterrows():
+            index = index-1
             allangles = range(int(row.start_angle),
                               int(row.end_angle+1),
                               int(row.step_angle))
@@ -308,14 +309,14 @@ class lsi(Measurement):
                 # g20s.append(float(
                 #   df_summary.loc[df_summary.seq_number == seq].g20))
                 # print(df_summary.loc[df_summary.seq_number == seq].CRA)
-                CRAs.append(float(
-                    df_summary.loc[df_summary.seq_number == seq].CRA))
-                CRBs.append(float(
-                    df_summary.loc[df_summary.seq_number == seq].CRB))
-                I0s.append(float(
-                    df_summary.loc[df_summary.seq_number == seq].I0))
-                Isamples.append(float(
-                    df_summary.loc[df_summary.seq_number == seq].I))
+                CRAs.append(
+                    df_summary.loc[df_summary.seq_number == seq].CRA)
+                CRBs.append(
+                    df_summary.loc[df_summary.seq_number == seq].CRB)
+                I0s.append(
+                    df_summary.loc[df_summary.seq_number == seq].I0)
+                Isamples.append(
+                    df_summary.loc[df_summary.seq_number == seq].I)
             # dict_sls['g20'].append(np.mean(g20s))
             dict_sls['CRA'].append(np.mean(CRAs))
             dict_sls['CRB'].append(np.mean(CRBs))
@@ -371,15 +372,29 @@ class lsi(Measurement):
         for phi in self.angles:
             self.write_phidls_file(phi)
 
-    def get_res(self, angle):
-        filename = self.get_phidls_filename(angle, end='res')
+    def get_res(self, sorphi, source='phidls'):
+        """
+        sorphi: seq number or angle, depending on source
+        """
+        if source == 'phidls':
+            filename = self.get_phidls_filename(sorphi, end='res')
+        elif source == 'joALV':
+            filename = self.get_joALV_filename(sorphi, end='res')
         df = pd.read_csv(filename, sep=',', header=None,
                          names=['t', 'res', 'g2', 'fit'])
         df.t = 10 ** df.t
+        if source == 'joALV':
+            df.t = df.t / 1000
         return df
 
-    def get_moA(self, angle, A='A'):
-        filename = self.get_phidls_filename(angle, end=f'mo{A}')
+    def get_moA(self, sorphi, A='A', source='phidls'):
+        """
+        sorphi: seq number or angle, depending on source
+        """
+        if source == 'phidls':
+            filename = self.get_phidls_filename(sorphi, end=f'mo{A}')
+        elif source == 'joALV':
+            filename = self.get_joALV_filename(sorphi, end=f'mo{A}')
         outdict = {'peaks': [],
                    'subpeaks': []}
         with open(filename) as f:
@@ -401,16 +416,36 @@ class lsi(Measurement):
                         outdict['Baseline'] = float(line.split('=')[1])
         return outdict
 
-    def get_Arl(self, angle, A='A', rmin=0, rmax=np.inf):
-        filename = self.get_phidls_filename(angle, end=f'{A}rl')
+    def get_Arl(self, sorphi, A='A', rmin=0, rmax=np.inf, source='phidls'):
+        """
+        sorphi: seq number or angle, depending on source
+        """
+        if source == 'phidls':
+            filename = self.get_phidls_filename(sorphi, end=f'{A}rl')
+            qq = self.qq(sorphi)
+        elif source == 'joALV':
+            filename = self.get_joALV_filename(sorphi, end=f'{A}rl')
+            qq = self.qq(self.phifromseq(sorphi))
         df = pd.read_csv(filename, sep=',', header=None,
                          names=['t', 'dist'])
         df['logt'] = df.t
         df.t = 10 ** df.t
-        df['rapp'] = self.Rfromt(df.t, self.qq(angle))
+        df['rapp'] = self.Rfromt(df.t, qq)
         df = df.loc[df.rapp > rmin]
         df = df.loc[df.rapp < rmax]
+        if source == 'joALV':
+            df.t = df.t / 1000
         return df
+
+    def get_joALV_path(self):
+        return join(self.path, 'joALV')
+
+    def get_joALV_filename(self, seq_number, end='res'):
+        filename = self.filename.split('#')[0]
+        filename = filename + '{0:03}'.format(seq_number)
+        filename = filename + '_joALV.' + end
+        return join(self.get_joALV_path(), filename)
+
 
     def get_phidlstable(self, fit):
         return fit.get_phidlstable(self)
@@ -466,12 +501,19 @@ class lsi(Measurement):
             (6*np.pi*visc*rh)
         return out
 
+    def GfromR(self, R, qq):
+        return self.DfromR(R) * qq
+
+
     def tfromR(self, rh, qq):
         D = self.DfromR(rh)
         return 1 / (D * qq)
 
     def q(self, phi):
-        "calculates the scattering vector q[m^-1] from the scattering angle 2\\Theta."
+        """
+        calculates the scattering vector q[m^-1]
+        from the scattering angle 2\\Theta.
+        """
         wl = self.get_wl()
         n = self.get_n()
         out = n * 4 * np.pi * np.sin((phi*np.pi/360))/wl
