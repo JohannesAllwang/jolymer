@@ -35,7 +35,6 @@ def get_fit_df(M):
         'res': M.theory() - np.array(M.Iq)})
     return fit_df
 
-
 class SasModel(sasmodel.SAXS_Model):
 
     def __init__(self, name, usename=None):

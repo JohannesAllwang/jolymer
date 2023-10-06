@@ -9,9 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.colors as mc
 import colorsys
-
-
 # For plotting:
+#7f1084 # this is the tsing hua color
 tum_purple = '#69085a'
 tum_dblue = '#0f1b5f'
 tum_cyan = '#00778a'
