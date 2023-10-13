@@ -18,8 +18,8 @@ path = Path(__file__).parent
 @dataclass
 class Measurement:
 
-    datestring: str
-    instrument: str
+    datestring: str = 'xxxx-xx-xx'
+    instrument: str = 'not given'
     rawdatapath = os.path.join(path, '../../rawdata')
     rawdatapath = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\rawdata\\"
     figures_path = f"C:\\Users\\{getpass.getuser()}\\LRZ Sync+Share\\master-thesis\\figures\\"

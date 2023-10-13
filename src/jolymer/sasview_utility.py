@@ -102,6 +102,36 @@ class SasModel(sasmodel.SAXS_Model):
         fit_df = fit_df[iqmin:iqmax]
         return fit_dict, fit_df
 
+    def write_bumpsfile(self, datapath, datafile):
+        with open(join(datapath, self.name), 'w') as f:
+            f.write('import matplotlib.pyplot as plt')
+            f.write('from bumps import names')
+            f.write('import subprocess')
+            f.write('from os.path import join')
+            f.write('from sasmodels import compare, data, core')
+            f.write('import sasmodels.compare as sascomp')
+            f.write('import sasmodels.data as data')
+            f.write('from sasmodels.bumps_model import Experiment, Model')
+
+            f.write("model = core.load_model('cylinder')")
+            f.write("model.name = 'modelname'")
+            f.write("jspheregel = Model(model)")
+
+            f.write(f"path = join('{datapath}', '{datafile}')")
+            f.write("testdata = data.load_data(path)")
+            f.write("M = Experiment(testdata, jspheregel)")
+            for par in self.parameters:
+                f.write(f'# M.parameters()["{par}"].range(-np.inf, np.inf)')
+
+            f.write('M.plot()')
+            f.write('plt.show()')
+            f.write('problem = names.FitProblem(M)')
+            f.write('problem.store = join("{}")')
+            f.write('problem.plot()')
+            f.write('plt.show()')
+
+
+
     def load_pars(self):
         pass
 
