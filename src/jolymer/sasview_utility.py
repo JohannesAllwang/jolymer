@@ -102,33 +102,39 @@ class SasModel(sasmodel.SAXS_Model):
         fit_df = fit_df[iqmin:iqmax]
         return fit_dict, fit_df
 
-    def write_bumpsfile(self, datapath, datafile):
-        with open(join(datapath, self.name), 'w') as f:
-            f.write('import matplotlib.pyplot as plt')
-            f.write('from bumps import names')
-            f.write('import subprocess')
-            f.write('from os.path import join')
-            f.write('from sasmodels import compare, data, core')
-            f.write('import sasmodels.compare as sascomp')
-            f.write('import sasmodels.data as data')
-            f.write('from sasmodels.bumps_model import Experiment, Model')
+    def write_bumpsfile(self, datapath, datafile, model='sphere'):
+        # datapath = join(datapath, datafile) # defined twice
+        bumpsinpath = join(datapath, f'{self.name}_{datafile}.py')
+        bumpsoutpath = join(f'{self.name}_{datafile}')
 
-            f.write("model = core.load_model('cylinder')")
-            f.write("model.name = 'modelname'")
-            f.write("jspheregel = Model(model)")
+        with open(bumpsinpath, 'w') as f:
+            f.write('import matplotlib.pyplot as plt\n')
+            f.write('from bumps import names\n')
+            f.write('import subprocess\n')
+            f.write('import numpy as np\n')
+            f.write('from os.path import join\n')
+            f.write('from sasmodels import compare, data, core\n')
+            f.write('import sasmodels.compare as sascomp\n')
+            f.write('import sasmodels.data as data\n')
+            f.write('from sasmodels.bumps_model import Experiment, Model\n')
 
-            f.write(f"path = join('{datapath}', '{datafile}')")
-            f.write("testdata = data.load_data(path)")
-            f.write("M = Experiment(testdata, jspheregel)")
+            f.write(f"model = core.load_model('{model}')\n")
+            f.write("model.name = 'modelname'\n")
+            f.write("jspheregel = Model(model)\n")
+
+            f.write(f"path = '{datafile}'\n\n")
+            f.write("testdata = data.load_data(path)\n")
+            f.write("M = Experiment(testdata, jspheregel)\n")
             for par in self.parameters:
-                f.write(f'# M.parameters()["{par}"].range(-np.inf, np.inf)')
+                f.write(f'# M.parameters()["{par}"].range(0, np.inf)\n')
+                f.write(f'# M.parameters()["{par}"].value = {self.sasmodel.parameters()[par].value}\n')
 
-            f.write('M.plot()')
-            f.write('plt.show()')
-            f.write('problem = names.FitProblem(M)')
-            f.write('problem.store = join("{}")')
-            f.write('problem.plot()')
-            f.write('plt.show()')
+            f.write('M.plot()\n')
+            f.write('plt.show()\n')
+            f.write('problem = names.FitProblem(M)\n')
+            f.write(f'problem.store = "{self.name}_{datafile.split(".")[0]}"\n')
+            f.write('problem.plot()\n')
+            f.write('plt.show()\n')
 
 
 
