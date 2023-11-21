@@ -10,14 +10,17 @@ from pylab import cm
 import matplotlib.pyplot as plt
 import pandas as pd
 
+import shutil
+import os
+
 import sasmodels
 from sasmodels import data as sasmodels_data
 import pyFAI
-import jscatter as js
 import fabio
 
 from .. import database_operations as dbo
 from ..Measurement import Measurement
+from .. import os_utility as osu
 
 from dataclasses import dataclass
 
@@ -42,6 +45,8 @@ class SAXS_Measurement(Measurement):
     rawpath: str= ''
     path: str = '~'
     filename: str='merge_001.dat'
+    name: str='unnamed'
+    angular_unit: str='$\\mathrm{\\AA}$'
 
     def get_filename(self):
         return join(self.path, self.filename)
@@ -94,6 +99,50 @@ class SAXS_Measurement(Measurement):
         im = ax.matshow(img, cmap=cm.viridis, origin='lower',
                         norm=LogNorm(vmin=0.01, vmax=10000), **kwargs)
         _colorbar(im)
+
+    def plot_data(self, label=None, scale=1, buf=False, **kwargs):
+        df = self.get_data()
+        if buf==True:
+            df = self.get_averaged(buf=True)
+        if 'figure' in kwargs:
+            fig, ax = kwargs['figure']
+            kwargs.pop('figure')
+        if 'ax' in kwargs:
+            ax = kwargs['ax']
+            kwargs.pop('ax')
+        else:
+            fig, ax = plt.subplots()
+            ax.set_xlabel('$q$ [1/nm]')
+            ax.set_ylabel('$I$ [1/cm]')
+        if 'shift' in kwargs:
+            scale = kwargs['shift']
+            kwargs.pop('shift')
+        if 'marker' in kwargs:
+            marker=kwargs['marker']
+            kwargs.pop('marker')
+        else:
+            marker='.'
+        if 'linestyle' in kwargs:
+            linestyle=kwargs['linestyle']
+            kwargs.pop('linestyle')
+        else:
+            linestyle=''
+
+        markers, caps, bars = ax.errorbar(df.q, df.I*scale, df.err_I*scale, marker=marker,
+                    linestyle=linestyle, label=label, elinewidth=0.2,  **kwargs)
+        # [bar.set_alpha(0.2) for bar in bars]
+
+        ax.set_xlabel(f'q [{self.angular_unit}]')
+        ax.set_ylabel('Intensity [cm$^{-1}$]')
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        return ax
+
+    def make_workdir(self, dirname=None):
+        if dirname is None:
+            dirname = self.name
+        osu.create_path(dirname)
+        shutil.copyfile(self.get_filename(), join(dirname, 'data.dat'))
 
 def gen_guinier_fitfunc(alpha):
     def inner(q, Rg, A):
