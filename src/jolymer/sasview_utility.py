@@ -37,7 +37,7 @@ def get_fit_df(M):
 
 class SasModel(sasmodel.SAXS_Model):
 
-    def __init__(self, name, usename=None):
+    def __init__(self, name, usename=None, samplename=None):
         self.sasmodel = Model(core.load_model(name))
         self.name = name
         if usename is None:
@@ -49,17 +49,23 @@ class SasModel(sasmodel.SAXS_Model):
         self.parameters = list(self.sasmodel.parameters().keys())
         self.pdict = self.sasmodel.parameters()
 
-    def get_Experiment(self, m):
-        path = m.get_filename()
+    def get_Experiment(self, m, path=None):
+        if path is None:
+            path = m.get_filename()
         mdata = data.load_data(path)
         return Experiment(mdata, self.sasmodel)
 
-    def load_fit(self, m, name=None):
+    def load_fit(self, m, datapath=None, errpath=None, name=None):
         fit_dict = {}
+        if errpath is None:
+            path = join(m.path, f'{name}.err')
+        if datapath is None:
+            path = join(m.path, f'{name}.dat')
         if name is None:
             name = self.name
-        M = self.get_Experiment(m)
-        with open(join(m.path, f'{name}.err')) as f:
+        M = self.get_Experiment(m, path=datapath)
+        print('load_fit', errpath)
+        with open(errpath) as f:
             for line in f:
                 if len(line) < 2:
                     continue
@@ -95,16 +101,28 @@ class SasModel(sasmodel.SAXS_Model):
                                            iqmin=m.iqmin,
                                            fixed_parameters=m.fixed_pars)
         """
-        M, fit_dict = self.load_fit(m, name=None)
+        if 'errpath' in kwargs:
+            errpath = kwargs.pop('errpath')
+        else:
+            errpath = None
+        if 'datapath' in kwargs:
+            datapath = kwargs.pop('datapath')
+        else:
+            datapath = None
+        print('fit', errpath)
+        M, fit_dict = self.load_fit(m, errpath=errpath,
+                                    datapath=datapath,
+                                    name=None)
         fit_df = get_fit_df(M)
         # fit_df = fit_df.loc[fit_df.q < iqmax]
         # fit_df = fit_df.loc[fit_df.q > iqmin]
-        fit_df = fit_df[iqmin:iqmax]
+        # fit_df = fit_df[iqmin:iqmax]
         return fit_dict, fit_df
 
-    def write_bumpsfile(self, datapath, datafile, model='sphere'):
+    def write_bumpsfile(self, datapath, datafile, model='sphere', bumpsinpath=None):
         # datapath = join(datapath, datafile) # defined twice
-        bumpsinpath = join(datapath, f'{self.name}_{datafile}.py')
+        if bumpsinpath is None:
+            bumpsinpath = join(datapath, f'{self.name}_{datafile}.py')
         bumpsoutpath = join(f'{self.name}_{datafile}')
 
         with open(bumpsinpath, 'w') as f:
@@ -122,7 +140,7 @@ class SasModel(sasmodel.SAXS_Model):
             f.write("model.name = 'modelname'\n")
             f.write("jspheregel = Model(model)\n")
 
-            f.write(f"path = '{datafile}'\n\n")
+            f.write(f"path = '{datapath}/{datafile}'\n\n")
             f.write("testdata = data.load_data(path)\n")
             f.write("M = Experiment(testdata, jspheregel)\n")
             for par in self.parameters:
@@ -136,13 +154,11 @@ class SasModel(sasmodel.SAXS_Model):
             f.write('problem.plot()\n')
             f.write('plt.show()\n')
 
-
-
     def load_pars(self):
         pass
 
-    def plot_fit():
-        pass
+    def plot_fit(self, **kwargs):
+        df = self.fit(**kwargs)
 
     def get_text(self, fit_dict):
         pass

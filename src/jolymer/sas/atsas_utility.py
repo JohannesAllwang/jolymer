@@ -4,8 +4,105 @@ import io
 import os
 from os.path import join
 import pandas as pd
+import re
+
+from dataclasses import dataclass
 
 atsas_bin = f"C:\\Users\\{getpass.getuser()}\\atsas\\bin"
+
+class ATSAS:
+
+    path: str = '~'
+    filename: str='data.dat'
+    angular_unit: str='$\\mathrm{nm^{-1}}$'
+    color: str=None
+    marker: str=''
+    linestyle: str='-'
+    cwd: str='.'
+
+    def run_program(self, program, *args, cwd=None, **kwargs):
+        runcwd = self.cwd
+        if cwd is None:
+            runcwd = self.cwd
+        subprocess.run([f'/home/johannes/repos/ATSAS-3.2.0-1/bin/{program}',
+                        *args], cwd=runcwd)
+
+    def run_crysol(self, file=None, datafile=None, prefix='test',
+                   smax=2, units=1, cwd='crysol', ns=500,
+                   other_arguments=['--explicit-hydrogens']):
+        if file is None:
+            file = join(self.cwd, self.filename)
+        if datafile is None:
+            datafile = self.filepath
+
+        self.run_program('crysol',
+                       file, datafile, f'--ns={ns}', f'--smax={smax}',
+                       f'--units={units}',
+                       *other_arguments, '--lm=60',
+                       f'--prefix={prefix}')
+
+    def run_gnom(self, path=None, filename=None, prefix='test',
+                 outfile='gnom.out', pofrfile='gnom.pofr', fitfile='gnom.fit',
+                 radius=500, other_arguments=[]):
+        if filename is None:
+            filename = self.filename
+        if path is None:
+            path = self.cwd
+
+        filepath = filename
+        # filepath = join(path, filename)
+        # outfile = join(path, outfile)
+        # pofrfile = join(path, pofrfile)
+        # fitfile = join(path, fitfile)
+        # print('cwd2', self.cwd)
+
+        self.run_program('datgnom', filepath, '-o', outfile,
+                         '-r', f'{radius}', *other_arguments)
+        self.run_program('out2pofr', outfile, '-o', pofrfile, *other_arguments)
+        self.run_program('out2fit', outfile, '-o', fitfile, *other_arguments)
+
+    def get_fit(self, path, engine='pandas', **kwargs):
+        """
+        Reads the data file at self.path / self.filename
+        Alternatively, a path can be provided as a keyword argument.
+        """
+        df = pd.read_csv(path, sep='\s+', header=None, skipfooter=20,
+                         names=['q', 'I', 'errI', 'fit'])
+        return df
+
+    def get_pofr(self, path, engine='pandas', **kwargs):
+        """
+        Reads the data file at self.path / self.filename
+        Alternatively, a path can be provided as a keyword argument.
+        """
+        df = pd.read_csv(path, sep='\s+', header=None,
+                         names=['r', 'pr', 'errpr'])
+        return df
+
+    def get_rg(self, path):
+        with open(path, 'r') as file:
+            content = file.read()
+            # Using regular expression to find the Real space Rg value
+            match = re.search(r'Real space Rg:\s+([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)\s*\+\-\s*([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)', content)
+            if match:
+                rg_value = float(match.group(1))
+                uncertainty = float(match.group(2))
+                return rg_value, uncertainty
+            else:
+                return None, None
+
+
+
+def run_crysol(file='', datafile='', prefix='test',
+                   smax=2, units=1, cwd='crysol', ns=500,
+               other_arguments=['--explicit-hydrogens']):
+    subprocess.run(['/home/johannes/repos/ATSAS-3.2.0-1/bin/crysol',
+                    file, datafile, f'--ns={ns}', f'--smax={smax}',
+                    f'--units={units}',
+                    *other_arguments, '--lm=60',
+                    f'--prefix={prefix}'],
+                   cwd=cwd)
+    return file
 
 def get_outpath(m, name):
     outfile = r"{}".replace('\\\\', '\\').replace('/', '\\').format(join(m.path, name)).replace('/', '\\')

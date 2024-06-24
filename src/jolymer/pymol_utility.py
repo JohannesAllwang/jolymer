@@ -191,6 +191,7 @@ def get_com(selection, state=1, mass=None, quiet=1):
 
 
 def plot_rg():
+    import pymol
     cmd.extend("get_com", get_com)
     pymol.cmd.extend("rgyrate", rgyrate)
     pymol.cmd.set('sphere_transparency', 0.5)
