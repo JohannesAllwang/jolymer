@@ -9,6 +9,7 @@ from matplotlib.colors import LogNorm
 from pylab import cm
 import matplotlib.pyplot as plt
 import pandas as pd
+import subprocess
 
 import shutil
 import os
@@ -93,29 +94,31 @@ class SAXS_Measurement(Measurement):
         df = df[df.q>qmin]
         return df
 
-    def save_data(self, filepath, **kwargs):
-        df = self.get_data(engine='pandas', **kwargs)
+    def save_data(self, filepath, df=None, **kwargs):
+        if df is None:
+            df = self.get_data(engine='pandas', **kwargs)
         df.to_csv(filepath, sep='\t', float_format='{:.7e}'.format, index=False)
 
     def get_filename_sasImage(self):
-        # with open(self.get_filename(), 'r') as f:
-        #     lines = f.readlines()
-        # matched_lines = [line for line in lines if re.search('Sample filename', line)]
-        # filename = matched_lines[0].split()[0]
-        # return join(self.rawpath, filename)
+        with open(self.get_filename(), 'r') as f:
+            lines = f.readlines()
+        matched_lines = [line for line in lines if re.search('Sample filename', line)]
+        filename = matched_lines[0].split()[0]
+        return join(self.rawpath, filename)
         return self.imagepath
 
-    def get_sasImage(self, filename=None, data=True):
+    def get_sasImage(self, filename=None, data=True, frame=None):
         if filename is None:
             if data:
-                return fabio.open(self.get_filename_sasImage()).data
+                print('test', self.get_filename_sasImage())
+                return fabio.open(self.get_filename_sasImage(), frame=frame).data
             else:
-                return fabio.open(self.get_filename_sasImage())
+                return fabio.open(self.get_filename_sasImage(frame=frame))
         else:
             if data:
-                return fabio.open(filename).data
+                return fabio.open(filename, frame=frame).data
             else:
-                return fabio.open(filename)
+                return fabio.open(filename, frame=frame)
 
     def get_gromacs(self, path=None, filename='waxs_final.xvg'):
         gromacs_path = path
@@ -161,14 +164,28 @@ class SAXS_Measurement(Measurement):
         return df
 
     def show_sasImage(self, filename=None, ax=None, vmin=1,
-                      vmax=1000, **kwargs):
+                      vmax=1000, frame=None, **kwargs):
         if ax is None:
             fig, ax = plt.subplots()
-        img = self.get_sasImage(filename=filename)
-        im = ax.matshow(img, cmap=cm.inferno, origin='lower',
+        img = self.get_sasImage(filename=filename, frame=frame)
+        # img = np.ma.masked_less(img, 200)
+        img = np.ma.masked_greater(img, 10000)
+        cmap = cm.inferno
+        cmap.set_bad(color='red')  # Set masked values to red
+        im = ax.matshow(img, cmap=cmap, origin='lower',
                         norm=LogNorm(vmin=vmin, vmax=vmax), **kwargs)
         ax.grid(False)
         return _colorbar(im)
+
+    def smooth_data(self, file_path=None, out_path=None):
+        if file_path is None:
+            file_path = self.get_filename()
+        if out_path is None:
+            out_path = self.get_workdir()
+        script_path = '/home/johannes/pCloudDrive/gromacs/odna_cufix/ac6/smooth-saxs-curve.sh'
+        result = subprocess.run(['bash', script_path, '-f', file_path],
+                                cwd=out_path)
+        return result
 
     @staticmethod
     def get_waxs_spectra(filename, include1=False, every_n=1, max_out=np.inf):
@@ -239,6 +256,10 @@ class SAXS_Measurement(Measurement):
             str_unit ='$\\mathrm{\\AA^{-1}}$'
             if self.angular_unit == 'nm':
                 df.q = df.q / 10
+        every_n = 1
+        if 'every_n' in kwargs:
+            every_n = kwargs.pop('every_n')
+        df = df[::every_n]
 
         markers, caps, bars = ax.errorbar(df.q, (df.I+linear_shift)*scale, df.err_I*scale,
                                           marker=marker, linestyle=linestyle,
@@ -290,9 +311,14 @@ class SAXS_Measurement(Measurement):
         ax.set_ylabel('Intensity $\\cdot q^2$ [A.U.]')
         return ax
 
+    def get_workdir(self):
+        dirname = f'./workdirs/{self.name}'
+        return dirname
+
     def make_workdir(self, dirname=None):
         if dirname is None:
-            dirname = f'./workdirs/{self.name}'
+            dirname = self.get_workdir()
+        osu.create_path('workdirs')
         osu.create_path(dirname)
         shutil.copyfile(self.get_filename(), join(dirname, 'data.dat'))
 
@@ -348,6 +374,19 @@ class SAXS_Measurement(Measurement):
         outdict['scale'] = scale
         outdict['offset'] = offset
         return outdict
+
+    def bin_data(self, df, qs):
+        from scipy.interpolate import interp1d
+        f = interp1d(df.q, df.I, kind='linear')
+        binned_df = pd.DataFrame({'q': qs,
+                                  'I': f(qs)})
+        if 'err_I' in df.keys():
+            err_f = interp1d(df.q, df.err_I, kind='linear')
+            binned_df = pd.DataFrame({'q': qs,
+                                     'I': f(qs),
+                                     'err_I': err_f(qs)})
+        return binned_df
+
 
     def get_rg(self, df=None, qmin=1, qmax=10):
         if df is None:

@@ -98,18 +98,17 @@ class biosaxs13A9M(SAXS_Measurement):
         import pyFAI
         from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
 
-        if not frame is None:
-            frame += 1 # because it usually starts to count at 1
         ai = AzimuthalIntegrator()
         ai.load(self.get_poni_filename())
 
         path = self.get_9M_filename(buffer=buffer)
-        sasImage = self.get_sasImage(path, frame=frame)
+        print('test', path)
+        sasImage = self.get_sasImage(pat, frame=frame)
         if waxs:
             path = self.get_1M_filename(buffer=buffer)
             sasImage = self.get_sasImage(path, frame=frame)
         data = np.ma.masked_greater(sasImage.data, 10000)
-        # print('data is masked')
+        print('data is masked')
         q, I, errI = ai.integrate1d(data, npt=npt,
                                   mask=data.mask,
                                   error_model='poisson',
@@ -128,7 +127,7 @@ class biosaxs13A9M(SAXS_Measurement):
                            npt=200):
         df_sample = self.integrate1d(filename=filename, waxs=waxs, frame=frame,
                                      npt=npt)
-        df_buffer = self.integrate1d(filename=filename, waxs=waxs,
+        df_buffer = self.integrate1d(filename=filename, waxs=waxs, frame=frame,
                                      npt=npt, buffer=True)
         df = df_sample
         df['q_buffer'] = df_buffer.q

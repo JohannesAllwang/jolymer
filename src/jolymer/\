@@ -2,8 +2,6 @@ import h5py
 import datetime
 from os.path import join
 from pathlib import Path
-import numpy as np
-import pandas as pd
 
 from .SAXS_Measurement import SAXS_Measurement
 
@@ -13,17 +11,6 @@ class biosaxs13A9M(SAXS_Measurement):
     def get_poni_filename(self, filepath=None):
         parent_dir = Path(self.path).parent
         outpath = Path(parent_dir, '1M.poni')
-        return outpath
-
-    def get_9M_filename(self, filepath=None, buffer=False):
-        header_dict = self.get_dat_header(filepath=filepath)
-        # print(header_dict)
-        filename_9M = header_dict['Sample filename']
-        if buffer:
-            filename_9M = header_dict['Empty Cell filename']
-        filename_9M = f'{filename_9M[0:3]}_master.h5'
-        parent_dir = Path(self.path).parent
-        outpath = Path(parent_dir, filename_9M)
         return outpath
 
     def get_1M_filename(self, filepath=None, buffer=False):
@@ -92,51 +79,4 @@ class biosaxs13A9M(SAXS_Measurement):
         with h5py.File(filepath, 'r') as hdf:
             length = hdf['entry']['instrument']['detector']['frame_time'][()]
         return length
-
-    def integrate1d(self, filename=None, waxs=False, frame=None,
-                    buffer=False, npt=200):
-        import pyFAI
-        from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
-
-        if not frame is None:
-            frame += 1 # because it usually starts to count at 1
-        ai = AzimuthalIntegrator()
-        ai.load(self.get_poni_filename())
-
-        path = self.get_9M_filename(buffer=buffer)
-        sasImage = self.get_sasImage(path, frame=frame)
-        if waxs:
-            path = self.get_1M_filename(buffer=buffer)
-            sasImage = self.get_sasImage(path, frame=frame)
-        data = np.ma.masked_greater(sasImage.data, 10000)
-        # print('data is masked')
-        q, I, errI = ai.integrate1d(data, npt=npt,
-                                  mask=data.mask,
-                                  error_model='poisson',
-                                  correctSolidAngle=True)
-        dat_header = self.get_dat_header()
-        T = float(dat_header['Sample Transmission coefficient'])
-        if buffer:
-            T = float(dat_header['Empty Cell Transmission coefficient'])
-        count_time = self.get_count_time(filepath=path)
-        I = I / T / count_time
-        errI = errI/T/count_time
-        df = pd.DataFrame({'q': q, 'I_sample': I, 'err_I_sample': errI})
-        return df
-
-    def integrade_subtract(self, filename=None, filename_buffer=None, waxs=False, frame=None,
-                           npt=200):
-        df_sample = self.integrate1d(filename=filename, waxs=waxs, frame=frame,
-                                     npt=npt)
-        df_buffer = self.integrate1d(filename=filename, waxs=waxs,
-                                     npt=npt, buffer=True)
-        df = df_sample
-        df['q_buffer'] = df_buffer.q
-        df['I_buffer'] = df_buffer.I_sample
-        df['err_I_buffer'] = df_buffer.err_I_sample
-        df['I'] = df.I_sample - df.I_buffer
-        df['err_I'] = df.err_I_sample + df.err_I_buffer
-        return df
-
-
 
