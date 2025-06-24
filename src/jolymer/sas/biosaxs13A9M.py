@@ -63,7 +63,7 @@ class biosaxs13A9M(SAXS_Measurement):
         if frame > 0:
             frame_time = self.get_frame_time(filepath=filepath)
             # print('timeshift', frame, frame_time)
-            frameshift = datetime.timedelta(seconds=frame*frame_time)
+            frameshift = datetime.timedelta(seconds=float(frame*frame_time))
             date = date + frameshift
         return date
 

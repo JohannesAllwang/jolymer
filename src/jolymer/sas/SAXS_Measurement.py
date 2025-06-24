@@ -46,6 +46,7 @@ class SAXS_Measurement(Measurement):
     path: str = '~'
     filename: str='merge_001.dat'
     name: str='unnamed'
+    short_name: str='unnamed'
     angular_unit: str='A' # or 'nm'
     gromacs_path: str='not defined'
     qmax: float=np.inf
@@ -53,6 +54,7 @@ class SAXS_Measurement(Measurement):
     color: str=None
     marker: str=None
     linestyle: str=''
+    shift: float=1
 
     imagepath: str=''
     waxs_imagepath: str=''
@@ -80,13 +82,16 @@ class SAXS_Measurement(Measurement):
         path = self.get_filename()
         if 'path' in kwargs:
             path = kwargs.pop('path')
+        scale = 1
+        if 'scale' in kwargs:
+            scale = kwargs.pop('scale')
         self.data1d = sasmodels_data.load_data(path, **kwargs)
         if engine == 'sasview':
             return self.data1d
         elif engine == 'pandas':
             outdict = {'q': self.data1d.x,
-                       'I': self.data1d.y,
-                       'err_I': self.data1d.dy}
+                       'I': self.data1d.y*scale,
+                       'err_I': self.data1d.dy*scale}
         df = pd.DataFrame(outdict)
         df = df[df.q<self.qmax]
         df = df[df.q<qmax]
@@ -138,7 +143,7 @@ class SAXS_Measurement(Measurement):
         print('skiprows', skiprows)
         print('nrows', nrows)
         df = pd.read_csv(filename,
-                 sep='\s+', names=['q', 'I', 'errI'], skiprows=skiprows,
+                 sep=r'\s+', names=['q', 'I', 'err_I'], skiprows=skiprows,
                  nrows = nrows,
                  dtype=np.float64)
         return df
@@ -187,30 +192,38 @@ class SAXS_Measurement(Measurement):
                                 cwd=out_path)
         return result
 
-    @staticmethod
-    def get_waxs_spectra(filename, include1=False, every_n=1, max_out=np.inf):
+    def get_waxs_spectra(self, filename, include1=False, every_n=1, max_out=np.inf):
         out = {'dfs': [],
                'times': []}
         with open(filename) as f:
             start_row = 0
-            time = 1
+            time = 0
             plot = 0 if include1 else 1
             for i, line in enumerate(f):
+                if len(line.split('simulation step')) > 1:
+                    time = float(line.split('step')[1])
                 if line == '@type xydy\n':
                     start_row = i+1
                 if line == '&\n':
                     end_row = i-2
                     if start_row>0 and (plot%every_n)==0 and len(out['dfs'])<max_out:
-                        df = pd.read_csv(filename, skiprows=start_row, nrows=end_row-start_row, sep='\s+',
-                                        names=['q', 'I', 'errI', 'I2', 'I3', 'I4'])
+                        df = pd.read_csv(filename, skiprows=start_row, nrows=end_row-start_row, sep=r'\s+',
+                                        names=['q', 'I', 'err_I', 'I2', 'I3', 'I4'])
                         out['dfs'].append(df)
                         out['times'].append(time)
-                    time += 1
+                    # time += 1
                     plot += 1
-            df = pd.read_csv(filename, skiprows=end_row+5, sep='\s+',
-                            names=['q', 'I', 'errI', 'I2', 'I3', 'I4'])
+            df = pd.read_csv(filename, skiprows=end_row+5, sep=r'\s+',
+                            names=['q', 'I', 'err_I', 'I2', 'I3', 'I4'])
             out['dfs'].append(df)
             out['times'].append(time)
+        try:
+            df_final = self.get_gromacs(path='', filename=filename.replace('spectra.xvg', 'final.xvg'))
+            out['df_final'] = df_final
+            print('added final')
+        except:
+            out['df_final'] = None
+            print('no _final found')
         return out
 
 
@@ -289,6 +302,8 @@ class SAXS_Measurement(Measurement):
         if 'shift' in kwargs:
             scale = kwargs['shift']
             kwargs.pop('shift')
+        else:
+            shift=self.shift
         if 'marker' in kwargs:
             marker=kwargs['marker']
             kwargs.pop('marker')
@@ -324,7 +339,7 @@ class SAXS_Measurement(Measurement):
 
     @staticmethod
     def get_crysol(path):
-        df = pd.read_csv(path, skiprows=2, sep='\s+',
+        df = pd.read_csv(path, skiprows=2, sep=r'\s+',
                          names=['q', 'I', 'err_I', 'fit'])
         return df
 
@@ -334,14 +349,16 @@ class SAXS_Measurement(Measurement):
             fit = df_fit.fit
         else:
             fit = df_fit.I
-            print('df_fit.I used because no df_fit.fit was found')
+            # print('df_fit.I used because no df_fit.fit was found')
         data = df.I
         err_data = df.err_I
         chi2 = np.sum(((data - fit) / err_data)**2 /
                              (len(df) - 1))
         return df_fit, chi2
 
-    def scale_and_offset_fit(self, df_ref, df_scale):
+    def scale_and_offset_fit(self, df_ref, df_scale, p0=None,
+                             scale=None, offset=None,
+                             bounds=(-np.inf, np.inf)):
         """Fit scale and offset of y_original to match y_intact."""
         import numpy as np
         from scipy import optimize
@@ -363,16 +380,24 @@ class SAXS_Measurement(Measurement):
         def linear_model(y, scale, offset):
             """Linear model."""
             return scale * y + offset
-        popt, _ = optimize.curve_fit(linear_model, df_scale_out.I, df_ref_out.I,
-                                     sigma=df_ref_out.err_I)
-        scale, offset = popt
+        if scale is None and offset is None:
+            popt, pcov = optimize.curve_fit(linear_model, df_scale_out.I, df_ref_out.I,
+                                         sigma=df_ref_out.err_I, p0=p0, bounds=bounds)
+            scale, offset = popt
+            err_scale, err_offset = np.sqrt(np.diag(pcov))
+        else:
+            err_scale, err_offset = [None, None]
+            print('using input scale and offset parameters')
         df_scale_out.I = scale * df_scale_out.I + offset
         if 'err_I' in df_scale_out.keys():
             df_scale_out.err_I = scale * df_scale_out.err_I
+        df_scale_out['res'] = (df_ref_out['I'] - df_scale_out['I']) / df_ref_out.err_I
         outdict['df'] = df_scale_out
         outdict['chi2'] = self.get_chi2(df_ref_out, df_scale_out)[1]
         outdict['scale'] = scale
         outdict['offset'] = offset
+        outdict['err_scale'] = err_scale
+        outdict['err_offset'] = err_offset
         return outdict
 
     def bin_data(self, df, qs):
@@ -388,7 +413,13 @@ class SAXS_Measurement(Measurement):
         return binned_df
 
 
-    def get_rg(self, df=None, qmin=1, qmax=10):
+    def get_rg(self, df=None, qmin=0, qmax=10,
+               plot=False, Rg0=1, I00=None, ax=None,
+               bounds=((0,0), (np.inf, np.inf)),
+               plot_kwargs={}):
+        outdict = {}
+        if I00 is None:
+            I00 = df.I.max()
         if df is None:
             df = self.get_data()
         df = df[df.q > qmin]
@@ -397,10 +428,16 @@ class SAXS_Measurement(Measurement):
         def guinier(q, Rg, I0):
             I = I0 * np.exp(-(Rg*q)**2/3)
             return I
-        popt, pcov = optimize.curve_fit(guinier, df.q, df.I, sigma=df.err_I)
-        Rg = popt[0]
-        err_Rg = np.sqrt(pcov[0, 0])
-        return Rg, err_Rg
+        popt, pcov = optimize.curve_fit(guinier, df.q, df.I, sigma=df.err_I, p0=[Rg0, I00], bounds=bounds)
+        outdict['Rg'] = popt[0]
+        outdict['err_Rg'] = np.sqrt(pcov[0, 0])
+        outdict['I0'] = popt[1]
+        outdict['err_I0'] = np.sqrt(pcov[1, 1])
+        if plot:
+            if ax is None:
+                ax = self.plot_data(**plot_kwargs)
+            ax.errorbar(df.q, guinier(df.q, *popt), marker='', linestyle='-.', label='fit')
+        return outdict
 
 def gen_guinier_fitfunc(alpha):
     def inner(q, Rg, A):

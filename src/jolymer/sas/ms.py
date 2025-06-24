@@ -4,6 +4,10 @@ import os
 import matplotlib.pyplot as plt
 import matplotlib
 from .beaucage import beaucage
+from dataclasses import dataclass, field
+
+from .SAXS_Measurement import SAXS_Measurement
+from .. import os_utility as osu
 
 
 def binArray(data, axis, binstep, binsize, func=np.nanmean):
@@ -19,17 +23,30 @@ def binArray(data, axis, binstep, binsize, func=np.nanmean):
     return data
 
 
+@dataclass
 class Ms:
 
-    def __init__(self, ms):
-        self.ms = ms
-        self.model = ms[0].model
+    ms: list[SAXS_Measurement] = field(default_factory=list)
+    model: str = ""
+    name: str = ""
+
 
     def __index__(self, index):
         return self.ms[index]
 
     def __len__(self):
         return len(self.ms)
+
+    def get_workdir(self):
+        dirname = f'./workdirs/ms_{self.name}'
+        return dirname
+
+    def make_workdir(self, dirname=None):
+        if dirname is None:
+            dirname = self.get_workdir()
+        osu.create_path('workdirs')
+        osu.create_path(dirname)
+        # shutil.copyfile(self.get_filename(), join(dirname, 'data.dat'))
 
     def make_plot(self, **kwargs):
         if 'ax' in kwargs:
@@ -177,6 +194,36 @@ class Ms:
         self.df.to_csv(path)
         return self.df
 
+    def get_rgs_filename(self, name='rgs.dat'):
+        out = f'{self.get_workdir()}/{name}'
+        return out
+
+    def _load_rgs(self):
+        filename = self.get_rgs_filename()
+        outdf = pd.read_csv(filename, sep=r'\s+')
+        return outdf
+
+    def get_rgs(self, load=True, **kwargs):
+        rgs_filename = self.get_rgs_filename()
+        if load and os.path.exists(rgs_filename):
+            print('rgs loaded from existing file', rgs_filename)
+            return self._load_rgs()
+        outdict = {'Rg': [],
+                   'err_Rg': [],
+                   'I0': [],
+                   'err_I0': []}
+        for m in self.ms:
+            try:
+                rdict = m.get_rg(**kwargs)
+                for key in rdict.keys():
+                    outdict[key].append(rdict[key])
+            except Exception as e:
+                for key in outdict.keys():
+                    outdict[key].append(0)
+        outdf = pd.DataFrame(outdict)
+        outdf.to_csv(rgs_filename, sep='\t', float_format='{:.7e}'.format, index=False)
+        return outdf
+
     def plot_par(self, par, **kwargs):
         ax, kwargs = self.make_plot(**kwargs)
         df = self.get_results()
@@ -185,31 +232,6 @@ class Ms:
         err_ydata = df[f'std_{par}']
         ax.errorbar(xdata, ydata, err_ydata, **kwargs)
         return ax
-
-    # latex table creation by ChatGTP
-    # def write_latex_table(df, filepath):
-    #     # Open the file in write mode
-    #     with open(filepath, 'w') as f:
-    #         # Write the LaTeX table preamble
-    #         f.write('\\begin{tabular}{|')
-    #         f.write('|'.join(['c'] * len(df.columns)))
-    #         f.write('|}\n')
-    #         f.write('\\hline\n')
-
-    #         # Write the column names
-    #         f.write(' & '.join(df.columns))
-    #         f.write(' \\\\\n')
-    #         f.write('\\hline\n')
-
-    #         # Write the data
-    #         for _, row in df.iterrows():
-    #             f.write(' & '.join([str(x) for x in row]))
-    #             f.write(' \\\\\n')
-
-    #         # Write the LaTeX table closing
-    #         f.write('\\hline\n')
-    #         f.write('\\end{tabular}')
-
 
     def markdown_table(self, fixed_pars=[], e_pars=[], **kwargs):
         out = '| parameter |'

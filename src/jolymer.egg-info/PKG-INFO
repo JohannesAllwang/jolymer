@@ -1,7 +1,7 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.2
 Name: jolymer
-Version: 0.0.1
-Summary: My first Python library
+Version: 0.0.2
+Summary: Library to assist the handling of experimental data
 Author: Johannes Allwang
 Author-email: johannes@it-allwang.de
 License: MIT
@@ -11,6 +11,9 @@ Classifier: Operating System :: OS Independent
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
 License-File: LICENSE
+Dynamic: author
+Dynamic: license
+Dynamic: summary
 
 # Johannes Allwang Polymer Analysis
 
