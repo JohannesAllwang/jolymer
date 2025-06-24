@@ -238,7 +238,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
                 if rerun_filename is None:
                     df_maxqfit = df.copy()
                 else:
-                    df_maxqfit =
+                    df_maxqfit = ''
                 df_maxqfit = df_maxqfit[df_maxqfit.q < maxqfit]
                 odict = self.scale_and_offset_fit(df_data, df_maxqfit)
                 scale = odict['scale']
