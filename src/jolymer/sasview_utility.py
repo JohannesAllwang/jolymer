@@ -93,6 +93,61 @@ class SasModel(sasmodel.SAXS_Model):
                     fit_dict[f'std_{par}'] = std_par
         return M, fit_dict
 
+    def load_json_fit(self, m, datapath=None, jsonpath=None, name=None):
+        """
+        Load DREAM JSON results and apply .best values and std ~ p68 half-width.
+        Returns (experiment, fit_dict) similar to load_fit().
+        """
+        import json
+        if name is None:
+            name = self.name
+
+        # Determine paths
+        if datapath is None:
+            datapath = join(m.path, f"{name}.dat")
+        if jsonpath is None:
+            jsonpath = join(m.path, f"{name}.json")
+
+        # Create experiment/model
+        M = self.get_Experiment(m, path=datapath)
+
+        # Container for returned values
+        fit_dict = {}
+
+        # Load json file
+        with open(jsonpath, "r") as f:
+            results = json.load(f)
+
+        # Loop through JSON parameters
+        for par, stats in results.items():
+            best = stats.get("best", None)
+            p68 = stats.get("p68", None)
+            mean = stats.get("mean", None)
+
+            if best is not None:
+                # update model value if exists
+                try:
+                    M.parameters()[par].value = float(best)
+                except Exception:
+                    pass
+
+                fit_dict[par] = float(best)
+
+            # standard deviation approximation: half width of 68% credible interval
+            if p68 is not None and len(p68) == 2:
+                std = (float(p68[1]) - float(p68[0])) / 2
+            else:
+                std = stats.get("std", "NA")
+
+            fit_dict[f"std_{par}"] = std
+
+        # chi2 if present
+        if "chi2" in results:
+            fit_dict["chi2"] = float(results["chi2"])
+
+        return M, fit_dict
+
+
     def fit(self, m, iqmin=0, iqmax=np.inf, **kwargs):
         """
         That this kind of model is compatible with the following kind of code:

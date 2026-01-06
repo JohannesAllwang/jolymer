@@ -108,7 +108,7 @@ class biosaxs13A9M(SAXS_Measurement):
         if waxs:
             path = self.get_1M_filename(buffer=buffer)
             sasImage = self.get_sasImage(path, frame=frame)
-        data = np.ma.masked_greater(sasImage.data, 10000)
+        data = np.ma.masked_greater(sasImage.data, 100000)
         # print('data is masked')
         q, I, errI = ai.integrate1d(data, npt=npt,
                                   mask=data.mask,
@@ -125,7 +125,7 @@ class biosaxs13A9M(SAXS_Measurement):
         return df
 
     def integrade_subtract(self, filename=None, filename_buffer=None, waxs=False, frame=None,
-                           npt=200):
+                           npt=200, adjustTMbuffer=1.0):
         df_sample = self.integrate1d(filename=filename, waxs=waxs, frame=frame,
                                      npt=npt)
         df_buffer = self.integrate1d(filename=filename, waxs=waxs,
@@ -134,7 +134,7 @@ class biosaxs13A9M(SAXS_Measurement):
         df['q_buffer'] = df_buffer.q
         df['I_buffer'] = df_buffer.I_sample
         df['err_I_buffer'] = df_buffer.err_I_sample
-        df['I'] = df.I_sample - df.I_buffer
+        df['I'] = df.I_sample - df.I_buffer/adjustTMbuffer
         df['err_I'] = df.err_I_sample + df.err_I_buffer
         return df
 

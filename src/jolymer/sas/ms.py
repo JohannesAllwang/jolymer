@@ -34,6 +34,9 @@ class Ms:
     def __index__(self, index):
         return self.ms[index]
 
+    def __iter__(self):
+        return iter(self.ms)
+
     def __len__(self):
         return len(self.ms)
 
@@ -211,7 +214,8 @@ class Ms:
         outdict = {'Rg': [],
                    'err_Rg': [],
                    'I0': [],
-                   'err_I0': []}
+                   'err_I0': [],
+                   'chi2': []}
         for m in self.ms:
             try:
                 rdict = m.get_rg(**kwargs)
@@ -221,6 +225,7 @@ class Ms:
                 for key in outdict.keys():
                     outdict[key].append(0)
         outdf = pd.DataFrame(outdict)
+        osu.create_path(self.get_workdir())
         outdf.to_csv(rgs_filename, sep='\t', float_format='{:.7e}'.format, index=False)
         return outdf
 

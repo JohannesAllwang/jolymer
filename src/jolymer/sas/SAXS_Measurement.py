@@ -79,9 +79,15 @@ class SAXS_Measurement(Measurement):
         qmin = 0
         if 'qmin' in kwargs:
             qmax = kwargs.pop('qmin')
+        if 'angular_unit' in kwargs:
+            angular_unit = kwargs.pop('angular_unit')
+        else:
+            angular_unit = self.angular_unit
         path = self.get_filename()
         if 'path' in kwargs:
             path = kwargs.pop('path')
+            if path is None:
+                path = self.get_filename()
         scale = 1
         if 'scale' in kwargs:
             scale = kwargs.pop('scale')
@@ -93,6 +99,13 @@ class SAXS_Measurement(Measurement):
                        'I': self.data1d.y*scale,
                        'err_I': self.data1d.dy*scale}
         df = pd.DataFrame(outdict)
+        # adjust q depending on if the required unit is the output unit:
+        if angular_unit == 'nm':
+            if self.angular_unit == 'A':
+                df.q = df.q*10
+        if angular_unit == 'A':
+            if self.angular_unit == 'nm':
+                df.q = df.q/10
         df = df[df.q<self.qmax]
         df = df[df.q<qmax]
         df = df[df.q>self.qmin]
@@ -174,7 +187,7 @@ class SAXS_Measurement(Measurement):
             fig, ax = plt.subplots()
         img = self.get_sasImage(filename=filename, frame=frame)
         # img = np.ma.masked_less(img, 200)
-        img = np.ma.masked_greater(img, 10000)
+        img = np.ma.masked_greater(img, 100000)
         cmap = cm.inferno
         cmap.set_bad(color='red')  # Set masked values to red
         im = ax.matshow(img, cmap=cmap, origin='lower',
@@ -228,8 +241,8 @@ class SAXS_Measurement(Measurement):
 
 
     def plot_data(self, label=None, scale=1, buf=False,
-                  linear_shift=0, **kwargs):
-        df = self.get_data()
+                  linear_shift=0, path=None, **kwargs):
+        df = self.get_data(path=path)
         if buf==True:
             df = self.get_averaged(buf=True)
         if 'figure' in kwargs:
@@ -260,6 +273,8 @@ class SAXS_Measurement(Measurement):
         unit = self.angular_unit
         if 'unit' in kwargs:
             unit = kwargs.pop('unit')
+        if 'angular_unit' in kwargs:
+            unit = kwargs.pop('angular_unit')
         str_unit = 'not assigned'
         if unit == 'nm':
             str_unit ='$\\mathrm{nm^{-1}}$'
@@ -281,7 +296,7 @@ class SAXS_Measurement(Measurement):
 
         ax.set_xlabel(f'q [{str_unit}]')
         ax.set_ylabel('Intensity [cm$^{-1}$]')
-        ax.set_xscale('log')
+        # ax.set_xscale('log')
         ax.set_yscale('log')
         return ax
 
@@ -317,7 +332,7 @@ class SAXS_Measurement(Measurement):
         if 'color' not in kwargs:
             kwargs['color'] = self.color
 
-        markers, caps, bars = ax.errorbar(df.q, df.I*df.q*df.q*scale, df.err_I*scale,
+        markers, caps, bars = ax.errorbar(df.q, df.I*df.q*df.q*scale, df.err_I*df.q*df.q*scale,
                                           marker=marker, linestyle=linestyle,
                                           label=label, elinewidth=0.2,  **kwargs)
         # [bar.set_alpha(0.2) for bar in bars]
@@ -358,7 +373,7 @@ class SAXS_Measurement(Measurement):
 
     def scale_and_offset_fit(self, df_ref, df_scale, p0=None,
                              scale=None, offset=None,
-                             bounds=(-np.inf, np.inf)):
+                             bounds=(-np.inf, np.inf), weight_data=True):
         """Fit scale and offset of y_original to match y_intact."""
         import numpy as np
         from scipy import optimize
@@ -382,12 +397,12 @@ class SAXS_Measurement(Measurement):
             return scale * y + offset
         if scale is None and offset is None:
             popt, pcov = optimize.curve_fit(linear_model, df_scale_out.I, df_ref_out.I,
-                                         sigma=df_ref_out.err_I, p0=p0, bounds=bounds)
+                                         sigma=(df_ref_out.err_I), p0=p0, bounds=bounds)
             scale, offset = popt
             err_scale, err_offset = np.sqrt(np.diag(pcov))
         else:
             err_scale, err_offset = [None, None]
-            print('using input scale and offset parameters')
+            # print('using input scale and offset parameters')
         df_scale_out.I = scale * df_scale_out.I + offset
         if 'err_I' in df_scale_out.keys():
             df_scale_out.err_I = scale * df_scale_out.err_I
@@ -433,6 +448,7 @@ class SAXS_Measurement(Measurement):
         outdict['err_Rg'] = np.sqrt(pcov[0, 0])
         outdict['I0'] = popt[1]
         outdict['err_I0'] = np.sqrt(pcov[1, 1])
+        outdict['chi2'] = np.sum(((df.I - guinier(df.q, *popt)) / df.err_I)**2) / len(df.q)
         if plot:
             if ax is None:
                 ax = self.plot_data(**plot_kwargs)
