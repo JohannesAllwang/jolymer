@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QFormLayout,
     QPushButton, QLineEdit, QFileDialog, QSplitter,
-    QMessageBox
+    QMessageBox, QSpinBox, QDoubleSpinBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
@@ -21,6 +21,7 @@ from qtconsole.manager import QtKernelManager
 from jolymer.gui.regals.views.components import ComponentsDock, ComponentRow, ComponentsEditorWindow
 from jolymer.gui.regals.views.uv import UVWindow
 from jolymer.gui.regals.views.saxs import SAXSWindow
+from jolymer.gui.regals.views.waxs import WAXSWindow
 from jolymer.gui.regals.views.alignment import AlignmentWindow
 from jolymer.gui.regals.state import BioREGALSState
 from jolymer.gui.regals.console.ipython_widget import IPythonConsole
@@ -35,6 +36,57 @@ class MplCanvas(FigureCanvasQTAgg):
         self.fig, self.axes = plt.subplots(nrows=2, ncols=2, figsize=(5, 4))
         super().__init__(self.fig)
 
+
+class RunOptionsWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        layout = QFormLayout(self)
+
+        # --- iterations ---
+        self.max_iter = QSpinBox()
+        self.max_iter.setRange(1, 100000)
+        self.max_iter.setValue(3000)
+
+        self.print_every = QSpinBox()
+        self.print_every.setRange(1, 5000)
+        self.print_every.setValue(500)
+
+        # --- UV ---
+        self.uv_weight = QDoubleSpinBox()
+        self.uv_weight.setRange(0.0, 1000.0)
+        self.uv_weight.setDecimals(3)
+        self.uv_weight.setValue(0.1)
+        self.lambda_profile_scale = QDoubleSpinBox()
+        self.lambda_profile_scale.setRange(0.0, 1e6)
+        self.lambda_profile_scale.setDecimals(3)
+        self.lambda_profile_scale.setValue(0.1)
+        self.lambda_concentration_scale = QDoubleSpinBox()
+        self.lambda_concentration_scale.setRange(0.0, 1e6)
+        self.lambda_concentration_scale.setDecimals(3)
+        self.lambda_concentration_scale.setValue(1.0)
+
+        self.uv_refit_every = QSpinBox()
+        self.uv_refit_every.setRange(1, 5000)
+        self.uv_refit_every.setValue(1)
+
+        layout.addRow("Max iterations", self.max_iter)
+        layout.addRow("Print every", self.print_every)
+        layout.addRow("UV weight", self.uv_weight)
+        layout.addRow("UV refit every", self.uv_refit_every)
+        layout.addRow("λ profile scale", self.lambda_profile_scale)
+        layout.addRow("λ concentration scale", self.lambda_concentration_scale)
+
+    def values(self):
+        """Return a clean dict for run_regals"""
+        return dict(
+            max_iter=self.max_iter.value(),
+            print_every=self.print_every.value(),
+            uv_weight=self.uv_weight.value(),
+            lambda_profile_scale=self.lambda_profile_scale.value(),
+            lambda_concentration_scale=self.lambda_concentration_scale.value(),
+            uv_refit_every=self.uv_refit_every.value(),
+        )
 
 # -----------------------------
 # Main Window
@@ -52,24 +104,25 @@ class RegalsMainWindow(QMainWindow):
         # === LEFT: controls ===
         controls = QWidget()
         controls_layout = QFormLayout(controls)
-        self.saxs_folder = QLineEdit()
-        self.sample_name = QLineEdit("test_sample")
-        btn_saxs = QPushButton("Browse…")
-        btn_uv = QPushButton("Browse…")
-        btn_run = QPushButton("Run (dummy)")
-        btn_saxs.clicked.connect(self.select_saxs_folder)
+        self.run_options = RunOptionsWidget()
+        controls_layout.addRow(self.run_options)
+        btn_run = QPushButton("Run")
         # btn_uv.clicked.connect(self.select_uv_file)
-        btn_run.clicked.connect(self.run_dummy)
-        controls_layout.addRow("X-ray folder:", self._with_button(self.saxs_folder, btn_saxs))
-        # controls_layout.addRow("UV file:", self._with_button(self.uv_file, btn_uv))
-        controls_layout.addRow("Sample name:", self.sample_name)
+        btn_run.clicked.connect(self.run_regals)
         controls_layout.addRow(btn_run)
+        btn_refresh = QPushButton("Refresh")
+        btn_refresh.clicked.connect(self.update_plot)
+        controls_layout.addRow(btn_refresh)
+        btn_clear = QPushButton("Clear")
+        btn_clear.clicked.connect(self.clear_plot)
+        controls_layout.addRow(btn_clear)
         # === CENTER: plot ===
         self.canvas = MplCanvas()
         # === BOTTOM: IPython console ===
         self.console = IPythonConsole(
             namespace={
                 "state": self.state,
+                "canvas": self.canvas,
             },
             # startup_file="~/.ipython/profile_default/startup/00-jolymer.py"
         )
@@ -164,45 +217,70 @@ class RegalsMainWindow(QMainWindow):
         if fname:
             self.uv_file.setText(fname)
 
-    def run_dummy(self):
-        """Dummy action to show interaction"""
-        from scipy.optimize import least_squares
-        q = self.state.to_regals['q']
-        x = self.state.to_regals['x']
-        I = self.state.to_regals['I']
-        sigma = self.state.to_regals['sigma']
-        uv_meas = self.state.to_regals['uv_meas']
-        def update_uv_scale(mix, Abs):
-            import numpy as np
+    def run_regals(self):
+        """run regals"""
+        try:
             from scipy.optimize import least_squares
-            def resid(u):
-                # linear combination of concentrations should match measured Abs
-                return Abs - mix.concentrations @ u
-            u0 = np.array([c.uv_scale for c in mix.components])
-            sol = least_squares(resid, u0)
-            # update components
-            for k, comp in enumerate(mix.components):
-                comp.uv_scale = sol.x[k]
-            return mix
-        stop_fun = lambda num_iter, params: [num_iter >= 3000, 'max_iter']
-        def update_fun(num_iter, new_mix, params, resid):
-            if num_iter % 500 == 0:
-                print(num_iter)
-            update_uv_scale(new_mix, uv_meas)
-            return True  # continue as normal
-        MM = self.state.mixture
-        MM.lambda_profile = [1 * lam for lam in MM.estimate_profile_lambda(sigma)]
-        MM.lambda_concentration = [1 * lam for lam in MM.estimate_concentration_lambda(sigma)]
-        RR = bioREGALS(I,sigma)
-        self.state.bioREGALS = RR
-        MM = RR.fit_concentrations(MM)
-        [MM,params,resid,exit_cond] = RR.run(MM, stop_fun, update_fun);
-        self.state.mixture = MM
-        self.state.regals_result = [params, resid, exit_cond]
-        self.update_plot()
+            q = self.state.to_regals['q']
+            x = self.state.to_regals['x']
+            I = self.state.to_regals['I']
+            sigma = self.state.to_regals['sigma']
+            uv_meas = self.state.to_regals['uv_meas']
+            opts = self.run_options.values()
+            def update_uv_scale(mix, Abs):
+                import numpy as np
+                from scipy.optimize import least_squares
+                def resid(u):
+                    # linear combination of concentrations should match measured Abs
+                    return Abs - mix.concentrations @ u
+                u0 = np.array([c.uv_scale for c in mix.components])
+                sol = least_squares(resid, u0)
+                # update components
+                for k, comp in enumerate(mix.components):
+                    comp.uv_scale = sol.x[k]
+                return mix
+            def stop_fun(num_iter, params):
+                if num_iter >= opts["max_iter"]:
+                    return [True, "max_iter"]
+                return [False, None]
+            def update_fun(num_iter, new_mix, params, resid):
+                if num_iter % opts["print_every"] == 0:
+                    self.console._append_plain_text(
+                        f"Iter {num_iter}")
+                if num_iter % opts["uv_refit_every"] == 0:
+                    update_uv_scale(new_mix, uv_meas)
+                return True
+            MM = self.state.mixture
+            MM.uv_weight = opts["uv_weight"]
+            MM.lambda_profile = [
+                opts["lambda_profile_scale"] * lam
+                for lam in MM.estimate_profile_lambda(sigma)
+            ]
+            MM.lambda_concentration = [
+                opts["lambda_concentration_scale"] * lam
+                for lam in MM.estimate_concentration_lambda(sigma)
+            ]
+            RR = bioREGALS(I,sigma)
+            self.state.bioREGALS = RR
+            MM = RR.fit_concentrations(MM)
+            [MM,params,resid,exit_cond] = RR.run(MM, stop_fun, update_fun);
+            self.state.mixture = MM
+            self.state.regals_result = [params, resid, exit_cond]
+            self.update_plot()
+        except Exception as e:
+            self.console._append_plain_text(
+                    "bad run" , e
+            )
+
+
+    def clear_plot(self):
+        for ax in self.canvas.axes.flat:
+            ax.clear()
+        self.canvas.fig.tight_layout()
+        self.canvas.draw()
 
     def update_plot(self):
-        # self.canvas.ax.clear()
+        self.clear_plot()
         try:
             import numpy as np
             import pandas as pd
@@ -214,8 +292,9 @@ class RegalsMainWindow(QMainWindow):
             MM =  self.state.mixture
             params, resid, exit_cond = self.state.regals_result
             uv_scales = [comp.uv_scale for comp in MM.components]
-            axs[0, 0].plot(x, MM.uv_meas, label="UV")
             axs[0, 0].plot(x, MM.concentrations*np.array(uv_scales))
+            axs[0, 0].plot(x, MM.uv_meas, label="UV",
+                           linestyle='', marker='o', alpha=0.5)
             axs[0,0].legend()
             #chi2 vs x
             axs[1, 0].plot(x, np.mean(resid ** 2, 0))
@@ -247,7 +326,7 @@ class RegalsMainWindow(QMainWindow):
             self.canvas.draw()
             # Print to IPython console
             self.console._append_plain_text(
-                f"\nRan dummy fit for {self.sample_name.text()}\n"
+                    "run successful"
             )
         except Exception as e:
             QMessageBox.critical(self, "Plot failed", str(e))
@@ -276,6 +355,12 @@ class RegalsMainWindow(QMainWindow):
             self._components_editor_window = ComponentsEditorWindow(self.state, self)
         self._components_editor_window.show()
         self._components_editor_window.raise_()
+
+    def open_waxs_window(self):
+        if not hasattr(self, "_waxs_window"):
+            self._saxs_window = WAXSWindow(self.state, self)
+        self._waxs_window.show()
+        self._waxs_window.raise_()
 
     def save_state(self):
         path, _ = QFileDialog.getSaveFileName(

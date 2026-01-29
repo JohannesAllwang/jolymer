@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QPushButton,
-    QFileDialog, QFormLayout, QDoubleSpinBox
+    QFileDialog, QFormLayout, QDoubleSpinBox,
+    QSpinBox, QHBoxLayout,
 )
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -48,7 +49,6 @@ class AlignmentWindow(QMainWindow):
         self.console = IPythonConsole(
             namespace={
                 "state": self.state,
-                "cm_saxs": self.state.cm_saxs,
             },
             # startup_file="~/.ipython/profile_default/startup/00-jolymer.py"
         )

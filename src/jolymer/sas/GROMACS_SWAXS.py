@@ -85,6 +85,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
             self.swaxspot_filename = self.md_basename+'_pot.xvg'
         if self.xtc_filename is None:
             self.xtc_filename = self.md_basename+'_center.xtc'
+            self.xtc_filename = self.md_basename+'_fit.xtc'
         # if self.eigenval_filename is None:
         #     self.eigenval_filename = self.md_basename+'_spectra.xvg'
 
@@ -247,8 +248,10 @@ class GROMACS_SWAXS(SAXS_Measurement):
         self.u = u
         return u
 
-    def get_medoid_path(self, time0=0, timef=1000):
-        out = Path(self.mdpath, f"medoid_{self.md_basename}_{time0:.0f}ps{timef:.0f}ps.pdb")
+    def get_medoid_path(self, time0=0, timef=1000, path=None):
+        if path is None:
+            outpath = self.mdpath
+        out = Path(outpath, f"medoid_{self.md_basename}_{time0:.0f}ps{timef:.0f}ps.pdb")
         return out
 
     def get_Dmax(self, time0=0, timef=1000):
@@ -267,7 +270,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         out = pd.DataFrame(outd)
         return out
 
-    def save_medoid(self, time0, timef, selection="name P"):
+    def save_medoid(self, time0, timef, selection="name P", outpath=None):
         """
         Compute the medoid frame (closest to all others) using a full distance matrix,
         optionally restricted to a selection (e.g., backbone or P atoms).
@@ -316,7 +319,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         print(f"Medoid (closest to all others): frame {best_frame}, RMSD={avg_dist[best_idx_local]:.3f} Å")
         # save PDB of medoid
         u.trajectory[best_frame]
-        out_path = self.get_medoid_path(time0=time0, timef=timef)
+        out_path = self.get_medoid_path(time0=time0, timef=timef, path=outpath)
         u.atoms.write(out_path)
         rmsd_to_medoid = dist_matrix[best_idx_local]  # shape (M,)
         rmsd_df = pd.DataFrame({'time': frames,
@@ -405,6 +408,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
 
         for medoid_time, color in zip(medoid_times, medoid_colors):
             ax.axvspan(medoid_time-0.5, medoid_time, facecolor=color, alpha=0.7)  # adjust alpha for transparency
+        return ax, axR
 
 
     def plot_waxspot3D(self, cmap='viridis', **kwargs):
@@ -648,6 +652,32 @@ class GROMACS_SWAXS(SAXS_Measurement):
         # ax.set_ylim(1e3, 1e7)
         return outdict
 
+    def get_Ree(self, selection="nucleic and name P",
+                time_interval=(0, np.inf), step=1):
+        u = self.get_u()
+        sel = u.select_atoms(selection)
+        out = {"time": [], "Ree": []}
+        for ts in u.trajectory[::step]:
+            t_ns = ts.time / 1000
+            if not (time_interval[0] <= t_ns <= time_interval[1]):
+                continue
+            r0 = sel.positions[0]
+            rN = sel.positions[-1]
+            Ree = np.linalg.norm(rN - r0)
+            out["time"].append(t_ns)
+            out["Ree"].append(Ree)
+        return pd.DataFrame(out)
+
+    def get_Ree_stats(self, **kwargs):
+        df = self.get_Ree(**kwargs)
+        Ree2 = df.Ree.values**2
+        return {
+            "Ree_mean": df.Ree.mean(),
+            "Ree_std": df.Ree.std(),
+            "Ree2_mean": Ree2.mean(),
+            "Ree2_std": Ree2.std()
+        }
+
     def get_all(self, mdpath=None,
                 plot_spectra=False,
                 spectra_filename=None,
@@ -741,11 +771,15 @@ class GROMACS_SWAXS(SAXS_Measurement):
         return outdict
 
     def plot_best_worst(self, best_kwargs={}, worst_kwargs={},
+                        worst=False, average=True,
                         spectra_legend=False, **kwargs):
         df = self.get_all()
         best_chi2df = self.pick_chi2(df, n=1)
-        worst_chi2df = self.pick_chi2(df, n=1, min_time=20, ascending=False)
-        pick_chi2 = [-int((-10*t)//6) for t in best_chi2df.time]+\
+        if worst:
+            worst_chi2df = self.pick_chi2(df, n=1, min_time=20, ascending=False)
+        pick_chi2 = [-int((-10*t)//6) for t in best_chi2df.time]
+        if worst:
+            pick_chi2 +=\
                     [-int((-10*t)//6) for t in worst_chi2df.time]
         print(pick_chi2)
         ax, ax_res = None, None
@@ -759,6 +793,8 @@ class GROMACS_SWAXS(SAXS_Measurement):
                                     spectra_legend=spectra_legend,
                                     spectra_colors=[jocolors.tstum0,
                                                     jocolors.tstum8])
+        if not average:
+            return outdict
         ax = outdict['ax']
         ax_res = outdict['ax_res']
         average_dict = self.get_average_spectra(maxqfit=19.0, every_n=1,
@@ -833,6 +869,91 @@ class GROMACS_SWAXS(SAXS_Measurement):
 
         df_avg = df_all.groupby("q").apply(weighted_avg).reset_index()
         return df_avg
+
+    def save_time_time_rmsd(self,
+                            selection="nucleic",
+                            timestep=1,
+                            out_file="rmsd_matrix.txt",
+                            tmp_coords="coords.dat"):
+        """
+        Compute a time-time RMSD matrix for the entire trajectory (sampled),
+        using no-fit coordinates (trajectory assumed pre-fitted externally),
+        and store results line by line to avoid RAM blow-up.
+
+        Parameters
+        ----------
+        selection : str
+            MDAnalysis atom selection.
+        timestep : int
+            Frame stride (e.g., 10 means every 10th frame).
+        out_file : str
+            Output text file where matrix rows are appended.
+        tmp_coords : str
+            Temporary file for numpy.memmap coordinate storage.
+        """
+        import numpy as np
+        import MDAnalysis as mda
+        from pathlib import Path
+        u = self.get_u()  # assumes already nojump+fit
+        atoms = u.select_atoms(selection)
+        # --------------------------------------------------------------------------
+        # PASS 1: COLLECT COORDS INTO MEMMAP
+        # --------------------------------------------------------------------------
+        print("[1/2] Sampling trajectory...")
+        # First count frames
+        n_frames = 0
+        for i, ts in enumerate(u.trajectory):
+            if i % timestep == 0:
+                n_frames += 1
+
+        n_atoms = atoms.n_atoms
+        ndim = n_atoms * 3
+        # Prepare memory map for coordinates
+        tmp_coords = Path(tmp_coords)
+        if tmp_coords.exists():
+            tmp_coords.unlink()  # ensure clean
+        coords_mm = np.memmap(tmp_coords, dtype='float32', mode='w+',
+                              shape=(n_frames, ndim))
+        # Fill memmap
+        idx = 0
+        for i, ts in enumerate(u.trajectory):
+            print('wtf long')
+            if i % timestep != 0:
+                continue
+            pos = atoms.positions.astype('float32').reshape(-1)
+            coords_mm[idx, :] = pos
+            idx += 1
+        coords_mm.flush()
+        print(f"  Stored {n_frames} sampled frames in memmap at '{tmp_coords}'")
+        # --------------------------------------------------------------------------
+        # PASS 2: COMPUTE RMSD MATRIX ROW-BY-ROW
+        # --------------------------------------------------------------------------
+        print("[2/2] Computing pairwise RMSD matrix...")
+        out_file = Path(out_file)
+        if out_file.exists():
+            out_file.unlink()  # overwrite if exists
+
+        # Re-open as readonly for safety
+        coords_mm = np.memmap(tmp_coords, dtype='float32', mode='r',
+                              shape=(n_frames, ndim))
+        with out_file.open("w") as fout:
+            for i in range(n_frames):
+                # Load ith frame once
+                ci = coords_mm[i]
+
+                # Compute RMSD(i,j) for j>=0
+                diffs = coords_mm - ci  # broadcast (n_frames, ndim)
+                rmsd_vec = np.sqrt(np.mean(diffs**2, axis=1))
+
+                # Write one line: space-separated RMSD values
+                fout.write(" ".join(f"{v:.4f}" for v in rmsd_vec) + "\n")
+
+                if (i+1) % 10 == 0:
+                    print(f"  Row {i+1}/{n_frames} done...")
+
+        print(f"Done! RMSD matrix written to '{out_file}'")
+        print("Pro tip: use `np.loadtxt` or pandas to visualize later.")
+
 
 
     # @staticmethod

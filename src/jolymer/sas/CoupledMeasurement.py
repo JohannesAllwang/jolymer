@@ -10,7 +10,8 @@ from .ms import Ms
 from jolymer.samples.bioMOLECULE import *
 from jolymer.uv.onlineUV import onlineUV
 
-def ms_from_folder(path='workdirs/ACGT6c80_waxs', file_prefix='waxs', min_seqi=0, max_seqi=100000):
+def ms_from_folder(path='workdirs/ACGT6c80_waxs', file_prefix='waxs',
+                   min_seqi=0, max_seqi=100000, q_beamstop=0.006):
     import os
     import re
     SRC_DIR = Path(path)
@@ -29,7 +30,8 @@ def ms_from_folder(path='workdirs/ACGT6c80_waxs', file_prefix='waxs', min_seqi=0
     mlist = []
     time=0
     for i, filename in enumerate(sorted_filenames):
-        m = SAXS_Measurement(path=SRC_DIR, filename=filename)
+        m = SAXS_Measurement(path=SRC_DIR, filename=filename,
+                             qmin=q_beamstop)
         m.time = time
         mlist.append(m)
         time += 2.1

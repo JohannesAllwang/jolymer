@@ -77,6 +77,7 @@ class onlineUV(Measurement):
         Return scaled Abs vs time for two wavelengths.
         refwl: reference wl (typically 260 nm)
         outwl: wavelength to scale (e.g. 320 nm)
+        outwl : int | list[int]
         """
         if refwl is None:
             refwl = self.refwl
@@ -84,14 +85,18 @@ class onlineUV(Measurement):
             outwl = self.outwl
         if alignment_time is None:
             alignment_time = self.alignment_time
-
+        if not isinstance(outwl, (list, tuple, np.ndarray)):
+            outwl = [outwl]
+        Noutwl = len(outwl)
         df = self.load_data().T
         # df.T[i][0] = wavelength
         # df.T[i][1:] = absorption series
 
         outdict = {}
+        outdict["scaled_outs"] = []
+        outdict["scale_factors"] = []
 
-        for i in range(20, 151):   # if you intentionally meant two indices use [20,150]
+        for i in range(20, 151):
             # print(df.iloc[i])
             wl = int(df.iat[0, i])
             # print(wl)
@@ -103,20 +108,30 @@ class onlineUV(Measurement):
             })
             ddf = ddf[ddf.time<self.maxtime]
             ddf = ddf[ddf.time>self.mintime]
-            if wl == int(refwl):
+            if np.isclose(wl, refwl, atol=0.5):
                 outdict["ref"] = ddf
-                if refwl == outwl:
+                if np.isclose(outwl, refwl, atol=0.5).any():
                     outdict["scaled_out"] = ddf
                     outdict["scale_factor"] = 1
-            elif wl == int(outwl):
+                ddf0 = ddf.copy()
+                ddf0.Abs = ddf0.Abs * 0
+            elif wl in outwl:
                 if "ref" not in outdict:
                     raise ValueError("Reference wavelength not processed yet.")
                 ddf_ref = outdict["ref"]
                 # scale at alignment_time index
-                factor = ddf_ref.Abs.iloc[alignment_time] / ddf.Abs.iloc[alignment_time]
+                idx = np.argmin(np.abs(ddf_ref.time.values - alignment_time))
+                factor = ddf_ref.Abs.iloc[idx] / ddf.Abs.iloc[idx]
                 ddf["Abs"] = ddf["Abs"] * factor
-                outdict["scaled_out"] = ddf
-                outdict["scale_factor"] = factor
+                outdict["scaled_outs"].append(ddf)
+                outdict["scale_factors"].append(factor)
+        Abs_stack = np.vstack([ddf.Abs.values for ddf in outdict["scaled_outs"]])
+        outdict["scaled_out"] = pd.DataFrame({
+            "time": outdict["scaled_outs"][0].time.values,
+            "Abs": Abs_stack.mean(axis=0),
+            "err_Abs": Abs_stack.std(axis=0),
+        })
+        outdict["scale_factor"] = float(np.mean([factor for factor in outdict["scale_factors"]]))
         if show:
             fig, ax = plt.subplots()
             ax.plot(outdict["scaled_out"].time, outdict["scaled_out"].Abs, label=f"$Abs_{{{outwl}}} \\times {factor:.2f}$")

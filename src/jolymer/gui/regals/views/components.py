@@ -18,6 +18,7 @@ class ComponentRow(QWidget):
     def __init__(self, parent=None,
                  xmin0=0, xmax0=400):
         super().__init__(parent)
+        self.resize(1200, 800)
         layout = QHBoxLayout(self)
 
         self.xmin = QDoubleSpinBox()
@@ -28,15 +29,18 @@ class ComponentRow(QWidget):
         self.xmax.setValue(xmax0)
         self.zero_min = QCheckBox("Zero @ min")
         self.zero_max = QCheckBox("Zero @ max")
-        self.Nw = QSpinBox()
-        self.Nw.setRange(1, 101)
-        self.Nw.setValue(31)
-        self.dmax = QDoubleSpinBox()
-        self.dmax.setRange(0, 1000)
-        self.dmax.setValue(5)
+        self.Nwc = QSpinBox()
+        self.Nwc.setRange(1, 101)
+        self.Nwc.setValue(31)
+        self.Nwp = QSpinBox()
+        self.Nwp.setRange(1, 101)
+        self.Nwp.setValue(91)
+        # self.dmax = QDoubleSpinBox()
+        # self.dmax.setRange(0, 1000)
+        # self.dmax.setValue(5)
         self.remove_btn = QPushButton("Remove")
 
-        for w in [self.xmin, self.xmax, self.zero_min, self.zero_max, self.Nw, self.dmax, self.remove_btn]:
+        for w in [self.xmin, self.xmax, self.zero_min, self.zero_max, self.Nwc, self.Nwp, self.remove_btn]:
             layout.addWidget(w)
 
 class ComponentsEditorWindow(QDialog):
@@ -90,9 +94,11 @@ class ComponentsEditorWindow(QDialog):
                 xmax=row.xmax.value(),
                 is_zero_at_xmin=row.zero_min.isChecked(),
                 is_zero_at_xmax=row.zero_max.isChecked(),
-                Nw=row.Nw.value()
+                Nw=row.Nwc.value()
             )
-            prof = profile_class('realspace', self.q, dmax=row.dmax.value(), Nw=101)
+            prof = profile_class('smooth', self.q,
+                                 # dmax=row.dmax.value(),
+                                 Nw=row.Nwp.value())
             peaks.append(bioComponent(conc, prof))
         # Store in state
         self.state.mixture = bioMIXTURE(peaks, uv_meas=uv_meas)

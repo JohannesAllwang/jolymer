@@ -17,6 +17,22 @@ class bioComponent(component):
         self.profile = profile
         self.uv_scale = uv_scale
 
+    def to_dict(self):
+        return {
+            "class": "bioComponent",
+            "concentration": self.concentration.to_dict(),
+            "profile": self.profile.to_dict(),
+            "uv_scale": self.uv_scale,
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(
+            concentration=ConcentrationClass.from_dict(d["concentration"]),
+            profile=ProfileClass.from_dict(d["profile"]),
+            uv_scale=d.get("uv_scale", 0.01),
+        )
+
 
 class bioMIXTURE(mixture):
 
@@ -71,6 +87,43 @@ class bioMIXTURE(mixture):
             return AA, Ab
         else:
             return AA
+
+    def to_dict(self):
+        return {
+            "class": "bioMIXTURE",
+            "components": [c.to_dict() for c in self.components],
+            # REGALS / mixture hyperparameters
+            "lambda_concentration": self.lambda_concentration.tolist(),
+            "lambda_profile": self.lambda_profile.tolist(),
+            "u_concentration": self.u_concentration,
+            "u_profile": self.u_profile,
+            # UV-specific additions
+            "uv_meas": None if self.uv_meas is None else self.uv_meas.tolist(),
+            "uv_err": None if self.uv_err is None else self.uv_err.tolist(),
+            "uv_weight": self.uv_weight,
+        }
+
+        @classmethod
+        def from_dict(cls, d):
+            components = [
+                bioComponent.from_dict(cd)
+                for cd in d["components"]
+            ]
+
+            return cls(
+                components=components,
+
+                lambda_concentration=np.array(d.get("lambda_concentration", [])),
+                lambda_profile=np.array(d.get("lambda_profile", [])),
+                u_concentration=d.get("u_concentration", []),
+                u_profile=d.get("u_profile", []),
+
+                uv_meas=None if d["uv_meas"] is None else np.array(d["uv_meas"]),
+                uv_err=None if d["uv_err"] is None else np.array(d["uv_err"]),
+                uv_weight=d.get("uv_weight", 1.0),
+            )
+
+
 
 class bioREGALS(regals):
     def __init__(self, I=None,

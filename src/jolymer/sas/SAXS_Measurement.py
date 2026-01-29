@@ -13,6 +13,7 @@ import subprocess
 
 import shutil
 import os
+import tempfile
 
 import sasmodels
 from sasmodels import data as sasmodels_data
@@ -73,6 +74,7 @@ class SAXS_Measurement(Measurement):
         Reads the data file at self.path / self.filename
         Alternatively, a path can be provided as a keyword argument.
         """
+        # from io import StringIO
         qmax = np.inf
         if 'qmax' in kwargs:
             qmax = kwargs.pop('qmax')
@@ -91,7 +93,7 @@ class SAXS_Measurement(Measurement):
         scale = 1
         if 'scale' in kwargs:
             scale = kwargs.pop('scale')
-        self.data1d = sasmodels_data.load_data(path, **kwargs)
+        self.data1d = SAXS_Measurement.load_data_without_nan_rows(path, **kwargs)
         if engine == 'sasview':
             return self.data1d
         elif engine == 'pandas':
@@ -370,6 +372,26 @@ class SAXS_Measurement(Measurement):
         chi2 = np.sum(((data - fit) / err_data)**2 /
                              (len(df) - 1))
         return df_fit, chi2
+
+    @staticmethod
+    def load_data_without_nan_rows(path, **kwargs):
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as tmp:
+            tmp_path = tmp.name
+            try:
+                with open(path, "r") as f:
+                    for line in f:
+                        # Skip lines that are pure NaN data rows
+                        if line.strip().startswith("NaN"):
+                            continue
+                        tmp.write(line)
+            except Exception as e:
+                print('path:', path)
+                print("e", e)
+        try:
+            data = sasmodels_data.load_data(tmp_path, **kwargs)
+        finally:
+            os.remove(tmp_path)
+        return data
 
     def scale_and_offset_fit(self, df_ref, df_scale, p0=None,
                              scale=None, offset=None,

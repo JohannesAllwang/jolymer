@@ -61,6 +61,10 @@ def dict_to_dataclass(
         for md in d['ms']:
             path = Path(md.pop('path'))
             m = SAXS_Measurement(path=path, **md)
+            try:
+                m.time = md['time']
+            except Exception as e:
+                print(e)
             mlist.append(m)
         out =  Ms(mlist)
         out.name = d['name']
@@ -107,30 +111,34 @@ class BioREGALSState:
         "Ms": Ms,
         "CoupledMeasurement": CoupledMeasurement,
         "onlineUV": onlineUV,
-        "bioMIXTURE": bioMIXTURE,
-        "bioREGALS": bioREGALS,
     }
     sample: Optional[bioMOLECULE] = None
     saxs: Optional[Ms] = None
+    waxs: Optional[Ms] = None
     cm_saxs: Optional[CoupledMeasurement] = None
+    cm_waxs: Optional[CoupledMeasurement] = None
     uv: Optional[onlineUV] = None
     mixture: bioMIXTURE | None = None
+    mixture_waxs: bioMIXTURE | None = None
 
     to_regals: dict = field(default_factory=dict)
     bioREGALS: Optional[bioREGALS] = None
     regals_result: dict = field(default_factory=dict)
-
-    figures: dict = field(default_factory=dict)
-    axes: dict = field(default_factory=dict)
+    to_regals_waxs: dict = field(default_factory=dict)
+    bioREGALS_waxs: Optional[bioREGALS] = None
+    regals_result_waxs: dict = field(default_factory=dict)
 
     def to_json(self, path: Path):
         outdict = {
+            "_state_version": 1,
             "sample": dataclass_to_dict(self.sample),
             "saxs": dataclass_to_dict(self.saxs),
+            "waxs": dataclass_to_dict(self.waxs),
             "uv": dataclass_to_dict(self.uv),
-            "mixture": dataclass_to_dict(self.mixture),
-            "bioREGALS": dataclass_to_dict(self.bioREGALS),
+            "mixture": None if self.mixture is None else self.mixture.to_dict(),
+            "mixture_waxs": None if self.mixture_waxs is None else self.mixture_waxs.to_dict(),
             "to_regals": self.to_regals,
+            "to_regals_waxs": self.to_regals_waxs,
         }
 
         with open(path, "w") as f:
@@ -141,30 +149,46 @@ class BioREGALSState:
         with open(path) as f:
             raw = json.load(f)
         raw = restore_special_types(raw)
-        print('test 1')
         sample=dict_to_dataclass(raw["sample"], registry)
         if not sample is None:
             self.sample=sample
         saxs=dict_to_dataclass(raw["saxs"], registry)
         if not saxs is None:
             self.saxs=saxs
+        try:
+            waxs=dict_to_dataclass(raw["waxs"], registry)
+        except Exception as e:
+            waxs = None
+            print(e)
+        if not waxs is None:
+            self.waxs=waxs
         uv=dict_to_dataclass(raw["uv"], registry)
         if not uv is None:
             self.uv=uv
-        mixture=dict_to_dataclass(raw["mixture"], registry)
-        if not mixture is None:
-            self.mixture=mixture
-        bioREGALS=dict_to_dataclass(raw["bioREGALS"], registry)
-        if not bioREGALS is None:
-            self.bioREGALS=bioREGALS
+        if raw.get("mixture") is not None:
+            self.mixture = bioMIXTURE.from_dict(raw["mixture"])
+        if raw.get("mixture_waxs") is not None:
+            self.mixture_waxs = bioMIXTURE.from_dict(raw["mixture_waxs"])
         if "to_regals" in raw:
             to_regals = raw['to_regals']
             if not to_regals is None:
                 self.to_regals=to_regals
-        print('test 2')
-        new_cm = CoupledMeasurement(saxs_list=self.saxs, uv=self.uv, sample=self.sample)
-        if self.cm_saxs is None:
-            self.cm_saxs = new_cm
-        else:
-            self.cm_saxs.__dict__.update(new_cm.__dict__)
+        if self.saxs and self.uv and self.sample:
+            new_cm = CoupledMeasurement(
+                saxs_list=self.saxs,
+                uv=self.uv,
+                sample=self.sample
+            )
+            if self.cm_saxs is None:
+                self.cm_saxs = new_cm
+            else:
+                self.cm_saxs.__dict__.update(new_cm.__dict__)
+        if self.waxs and self.uv and self.sample:
+            new_cm_waxs = CoupledMeasurement(waxs_list=self.waxs,
+                                        uv=self.uv,
+                                        sample=self.sample)
+            if self.cm_waxs is None:
+                self.cm_waxs = new_cm_waxs
+            else:
+                self.cm_waxs.__dict__.update(new_cm_waxs.__dict__)
         return self
