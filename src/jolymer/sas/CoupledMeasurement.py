@@ -30,15 +30,15 @@ def ms_from_folder(path='workdirs/ACGT6c80_waxs', file_prefix='waxs',
     mlist = []
     time=0
     for i, filename in enumerate(sorted_filenames):
+        if i>max_seqi:
+            break
+        if i<min_seqi:
+            continue
         m = SAXS_Measurement(path=SRC_DIR, filename=filename,
                              qmin=q_beamstop)
         m.time = time
         mlist.append(m)
         time += 2.1
-        if i>=max_seqi:
-            break
-        if i<min_seqi:
-            continue
     print("got number of ms:", len(mlist))
     out =  Ms(mlist)
     out.name = file_prefix

@@ -57,7 +57,7 @@ class SAXSWindow(QMainWindow):
         self.saxs_kind_edit = QLineEdit("I0")
         self.q_beamstop_edit = QDoubleSpinBox()
         self.q_beamstop_edit.setDecimals(3)
-        self.q_beamstop_edit.setSingleStep(0.006)
+        self.q_beamstop_edit.setSingleStep(0.0001)
         self.qstar_edit = QDoubleSpinBox()
         self.qstar_edit.setDecimals(3)
         self.qstar_edit.setSingleStep(0.01)
@@ -69,11 +69,13 @@ class SAXSWindow(QMainWindow):
         self.qmax_edit.setSingleStep(0.01)
 
         if self.state.cm_saxs is None:
+            self.q_beamstop_edit.setValue(0.006)
             self.qmax_edit.setValue(0.4)
             self.qmin_edit.setValue(0.04)
             self.qstar_edit.setValue(0.1)
         else:
             cm_saxs = self.state.cm_saxs
+            self.q_beamstop_edit.setValue(cm_saxs.saxs_list.ms[0].qmin)
             self.qmax_edit.setValue(cm_saxs.qmax)
             self.qmin_edit.setValue(cm_saxs.qmin)
             self.qstar_edit.setValue(cm_saxs.qstar)
@@ -82,6 +84,7 @@ class SAXSWindow(QMainWindow):
 
 
         form_layout = QFormLayout()
+        form_layout.addRow("q beamstop:", self.q_beamstop_edit)
         form_layout.addRow("SAXS kind:", self.saxs_kind_edit)
         form_layout.addRow("q*:", self.qstar_edit)
         form_layout.addRow("q min:", self.qmin_edit)
@@ -113,7 +116,7 @@ class SAXSWindow(QMainWindow):
         from jolymer.sas.CoupledMeasurement import ms_from_folder
         path = self.path_edit.text()
         name = self.name_edit.text()
-        q_beamstop = self.q_beamstop.value()
+        q_beamstop = self.q_beamstop_edit.value()
         start, end = self.start_idx.value(), self.end_idx.value()
         OUV = self.state.uv
         sample = self.state.sample
