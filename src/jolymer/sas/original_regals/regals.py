@@ -361,6 +361,44 @@ class concentration_class:
     #def __getattr__(self,attr):
     #    return super().__getattribute__('_regularizer').__getattribute__(attr) #super() usage for deepcopy
 
+    def to_dict(self):
+        r = self._regularizer
+        d = {
+            "_type": "concentration",
+            "reg_type": self.reg_type,
+            "params": {},
+        }
+        if isinstance(r, concentration_simple):
+            d["params"] = {
+                "x": r.x,
+                "xmin": r.xmin,
+                "xmax": r.xmax,
+            }
+        elif isinstance(r, concentration_smooth):
+            d["params"] = {
+                "x": r.x,
+                "xmin": r.xmin,
+                "xmax": r.xmax,
+                "Nw": r.Nw,
+                "is_zero_at_xmin": r.is_zero_at_xmin,
+                "is_zero_at_xmax": r.is_zero_at_xmax,
+            }
+        else:
+            raise TypeError(f"Unknown concentration regularizer {type(r)}")
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        if d is None:
+            return None
+        if d["_type"] != "concentration":
+            raise ValueError("Not a concentration dict")
+
+        params = d["params"]
+        params["x"] = np.asarray(params["x"])
+
+        return cls(d["reg_type"], **params)
+
 
 
 class concentration_simple:
@@ -559,6 +597,45 @@ class profile_class:
 
     #def __getattr__(self,attr):
     #    return super().__getattribute__('_regularizer').__getattribute__(attr) #super() usage for deepcopy
+
+    def to_dict(self):
+        r = self._regularizer
+        d = {
+            "_type": "profile",
+            "reg_type": self.reg_type,
+            "params": {},
+        }
+        if isinstance(r, profile_simple):
+            d["params"] = {
+                "q": r.q,
+            }
+        elif isinstance(r, profile_smooth):
+            d["params"] = {
+                "q": r.q,
+                "Nw": r.Nw,
+            }
+        elif isinstance(r, profile_real_space):
+            d["params"] = {
+                "q": r.q,
+                "dmax": r.dmax,
+                "Nw": r.Nw,
+                "is_zero_at_r0": r.is_zero_at_r0,
+                "is_zero_at_dmax": r.is_zero_at_dmax,
+            }
+        else:
+            raise TypeError(f"Unknown profile regularizer {type(r)}")
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        if d is None:
+            return None
+        if d["_type"] != "profile":
+            raise ValueError("Not a profile dict")
+        params = d["params"]
+        params["q"] = np.asarray(params["q"])
+        return cls(d["reg_type"], **params)
+
 
 
 

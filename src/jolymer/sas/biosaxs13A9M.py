@@ -15,6 +15,15 @@ class biosaxs13A9M(SAXS_Measurement):
         outpath = Path(parent_dir, '1M.poni')
         return outpath
 
+    def get_rigi_filename(self, filepath=None, buffer=False):
+        header_dict = self.get_dat_header(filepath=filepath)
+        rigi_name = header_dict['Sample information (beam flux)']
+        if buffer:
+            rigi_name = header_dict['Empty Cell information (beam flux)']
+        parent_dir = Path(self.path).parent
+        outpath = Path(parent_dir, rigi_name)
+        return outpath
+
     def get_9M_filename(self, filepath=None, buffer=False):
         header_dict = self.get_dat_header(filepath=filepath)
         # print(header_dict)
@@ -49,6 +58,41 @@ class biosaxs13A9M(SAXS_Measurement):
                 if line.replace(' ', '')=='QIERROR\n':
                     break
             return outdict
+
+    def get_len_frames(self, filepath=None, buffer=False):
+        header_dict = self.get_dat_header(filepath=filepath)
+        out = int(header_dict['Total Frame Numbers'])
+        if buffer:
+            with open(self.get_rigi_filename(filepath=filepath,
+                                             buffer=buffer)) as f:
+                out = sum(1 for _ in f)
+                out = out / 7
+        return out
+
+    def get_rigi(self, filepath=None, buffer=False):
+        header_dict = self.get_dat_header(filepath=filepath)
+        len_frames = self.get_len_frames(filepath=filepath, buffer=buffer)
+        civiSMPs, rigiSMPs, expSMPs = [], [], []
+        with open(self.get_rigi_filename(filepath=filepath, buffer=buffer)) as rigi_file:
+            for i, line in enumerate(rigi_file):
+                if i < len_frames:
+                    pass
+                elif i < 2*len_frames:
+                    civiSMPs.append(float(line))
+                elif i < 3*len_frames:
+                    rigiSMPs.append(float(line))
+                elif i < 4*len_frames:
+                    pass
+                elif i < 5*len_frames:
+                    expSMPs.append(float(line))
+                elif i < 6*len_frames:
+                    pass
+        out = pd.DataFrame({'frame_number' : np.linspace(1,len_frames,
+                                                         num=len(civiSMPs)),
+                         'civiSMS': civiSMPs,
+                         'rigiSMP': rigiSMPs,
+                         'expSMP': expSMPs})
+        return out
 
     def get_data_collection_date(self, filepath=None, frame=0):
         if filepath is None:
@@ -108,7 +152,13 @@ class biosaxs13A9M(SAXS_Measurement):
         if waxs:
             path = self.get_1M_filename(buffer=buffer)
             sasImage = self.get_sasImage(path, frame=frame)
-        data = np.ma.masked_greater(sasImage.data, 100000)
+        data = sasImage.data
+        med = np.median(data)
+        mad = np.median(np.abs(data - med))
+# robust threshold
+        mask = np.abs(data - med) > (8 * mad)
+        data = np.ma.array(data, mask=mask)
+        # data = np.ma.masked_greater(sasImage.data, 100000)
         # print('data is masked')
         q, I, errI = ai.integrate1d(data, npt=npt,
                                   mask=data.mask,
@@ -118,7 +168,8 @@ class biosaxs13A9M(SAXS_Measurement):
         T = float(dat_header['Sample Transmission coefficient'])
         if buffer:
             T = float(dat_header['Empty Cell Transmission coefficient'])
-        count_time = self.get_count_time(filepath=path)
+        # count_time = self.get_count_time(filepath=path)
+        count_time = 1 # wile using rigi to normalize
         I = I / T / count_time
         errI = errI/T/count_time
         df = pd.DataFrame({'q': q, 'I_sample': I, 'err_I_sample': errI})
@@ -128,14 +179,30 @@ class biosaxs13A9M(SAXS_Measurement):
                            npt=200, adjustTMbuffer=1.0):
         df_sample = self.integrate1d(filename=filename, waxs=waxs, frame=frame,
                                      npt=npt)
+        df_rigi_sample = self.get_rigi()
+        rigi_sample = df_rigi_sample.loc[
+            df_rigi_sample.frame_number == frame + 1,  # frame numbering convention
+            'rigiSMP'
+        ].iloc[0]
         df_buffer = self.integrate1d(filename=filename, waxs=waxs,
                                      npt=npt, buffer=True)
-        df = df_sample
+        df_rigi_buffer = self.get_rigi(buffer=True)
+        # print(df_rigi_buffer)
+        rigi_buffer = df_rigi_buffer.loc[
+            df_rigi_buffer.frame_number == 1,  # frame numbering convention
+            'rigiSMP'
+        ].iloc[0]
+        # print('rigi sample:', rigi_sample)
+        # print('rigi buffer:', rigi_buffer)
+        df = df_sample.copy()
+        df['I_sample'] = df.I_sample / rigi_sample
+        df['err_I_sample'] = df.err_I_sample / rigi_sample
         df['q_buffer'] = df_buffer.q
-        df['I_buffer'] = df_buffer.I_sample
-        df['err_I_buffer'] = df_buffer.err_I_sample
+        df['I_buffer'] = df_buffer.I_sample / rigi_buffer
+        df['err_I_buffer'] = df_buffer.err_I_sample / rigi_buffer
         df['I'] = df.I_sample - df.I_buffer/adjustTMbuffer
-        df['err_I'] = df.err_I_sample + df.err_I_buffer
+        df['err_I'] = np.sqrt(df.err_I_sample**2 + (df.err_I_buffer/adjustTMbuffer)**2)
+        # df['err_I'] = df.err_I_sample + df.err_I_buffer
         return df
 
 

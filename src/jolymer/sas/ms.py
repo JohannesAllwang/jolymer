@@ -40,6 +40,24 @@ class Ms:
     def __len__(self):
         return len(self.ms)
 
+    def build_saxs_matrix(self):
+        I_list = []
+        sigma_list = []
+        q_values = None
+        for m in self.ms:
+            df = m.get_data(angular_unit='nm')
+            # df = df.iloc[0:]  # your skip logic
+            if q_values is None:
+                q_values = df.q.to_numpy()
+            I_list.append(df.I.to_numpy())
+            sigma_list.append(df.err_I.to_numpy())
+        self._I = np.column_stack(I_list)
+        self._sigma = np.column_stack(sigma_list)
+        self._q = q_values
+        self._x = np.arange(self._I.shape[1]) * 2.1
+        return self._q, self._I, self._sigma, self._x
+
+
     def get_workdir(self):
         dirname = f'./workdirs/ms_{self.name}'
         return dirname

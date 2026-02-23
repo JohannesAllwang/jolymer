@@ -184,12 +184,12 @@ class SAXS_Measurement(Measurement):
         return df
 
     def show_sasImage(self, filename=None, ax=None, vmin=1,
-                      vmax=1000, frame=None, **kwargs):
+                      vmax=1000, frame=None, mask_above=10000, **kwargs):
         if ax is None:
             fig, ax = plt.subplots()
         img = self.get_sasImage(filename=filename, frame=frame)
         # img = np.ma.masked_less(img, 200)
-        img = np.ma.masked_greater(img, 100000)
+        img = np.ma.masked_greater(img, mask_above)
         cmap = cm.inferno
         cmap.set_bad(color='red')  # Set masked values to red
         im = ax.matshow(img, cmap=cmap, origin='lower',
@@ -298,7 +298,7 @@ class SAXS_Measurement(Measurement):
 
         ax.set_xlabel(f'q [{str_unit}]')
         ax.set_ylabel('Intensity [cm$^{-1}$]')
-        # ax.set_xscale('log')
+        ax.set_xscale('log')
         ax.set_yscale('log')
         return ax
 

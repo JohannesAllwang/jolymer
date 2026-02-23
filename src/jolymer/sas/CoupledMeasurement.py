@@ -11,7 +11,8 @@ from jolymer.samples.bioMOLECULE import *
 from jolymer.uv.onlineUV import onlineUV
 
 def ms_from_folder(path='workdirs/ACGT6c80_waxs', file_prefix='waxs',
-                   min_seqi=0, max_seqi=100000, q_beamstop=0.006):
+                   min_seqi=0, max_seqi=100000, q_beamstop=0.006,
+                   angular_unit='A'):
     import os
     import re
     SRC_DIR = Path(path)
@@ -35,14 +36,263 @@ def ms_from_folder(path='workdirs/ACGT6c80_waxs', file_prefix='waxs',
         if i<min_seqi:
             continue
         m = SAXS_Measurement(path=SRC_DIR, filename=filename,
-                             qmin=q_beamstop)
+                             qmin=q_beamstop, angular_unit=angular_unit)
         m.time = time
         mlist.append(m)
         time += 2.1
     print("got number of ms:", len(mlist))
     out =  Ms(mlist)
     out.name = file_prefix
+    out.min_seqi = min_seqi
+    out.max_seqi = max_seqi
     return out
+
+import numpy as np
+from scipy.interpolate import interp1d
+from scipy.optimize import differential_evolution
+
+@dataclass
+class AlignSAXS_WAXS:
+
+    ms_saxs: Ms
+    ms_waxs: Ms
+
+    def interpolate_matrix(
+            self,
+            qmin=None,
+            qmax=None,
+    ):
+        q_s, I_s, sigma_s, _ = self.ms_saxs.build_saxs_matrix()
+        q_w, I_w, sigma_w, _ = self.ms_waxs.build_saxs_matrix()
+        outdict = {'q_s': q_s,
+                   'q_w': q_w,
+                   'I_s': I_s,
+                   'I_w': I_w,
+                   "sigma_s": sigma_s,
+                   "sigma_w": sigma_w}
+        qmin_auto = max(q_s.min(), q_w.min())
+        qmax_auto = min(q_s.max(), q_w.max())
+        qmin = qmin if qmin is not None else qmin_auto
+        qmax = qmax if qmax is not None else qmax_auto
+        mask_w = (q_w > qmin) & (q_w < qmax)
+        if mask_w.sum() < 5:
+            raise ValueError("Overlap region too small")
+        outdict['num_frames'] = I_w.shape[1]
+        outdict['qw_ov'] = q_w[mask_w]
+        outdict['Iw_ov'] = I_w[mask_w, :]
+        interp = interp1d(q_s, I_s, axis=0, bounds_error=False,
+                          fill_value=np.nan)
+        Is_ov = interp(outdict['qw_ov'])
+        sigma_w_ov = sigma_w[mask_w, :]
+        interpw = interp1d(q_s, sigma_s, axis=0, bounds_error=False,
+                           fill_value=np.nan)
+        sigma_s_ov = interpw(outdict['qw_ov'])
+        outdict['Is_ov'] = Is_ov
+        outdict['sigma_s_ov'] = sigma_s_ov
+        outdict['sigma_w_ov'] = sigma_w_ov
+        return outdict
+
+    def align_saxs_waxs_global(
+        self,
+        qmin=None,
+        qmax=None,
+        use_errors=True,
+    ):
+        """
+        Global alignment of WAXS to SAXS using all datasets simultaneously.
+        Fits:
+            I_waxs(q) = a * I_saxs(q) + b
+        SAXS is unchanged; WAXS is scaled.
+        Returns:
+            a, b, diagnostics
+        """
+        matrix_dict = self.interpolate_matrix(qmin=qmin,
+                                              qmax=qmax)
+        # def loss(params):
+        #     a = params[0]
+        #     offsets = params[1:]
+        #     model = a * matrix_dict['Is_ov'] + offsets
+        #     total_sigma = np.sqrt(matrix_dict['sigma_w_ov']**2 +\
+        #             (a * matrix_dict['sigma_s_ov'])**2)
+        #     weighted_mae = np.mean(np.abs(matrix_dict['Iw_ov'] - model) / total_sigma)
+        #     penalty = 0
+        #     if np.any(model < 0):
+        #         penalty = np.sum(np.abs(model[model < 0])) * 1e6
+        #     return weighted_mae + penalty
+        def loss(params):
+            a = params[0]
+            offsets = params[1:]  # shape: (n_frames,)
+            model = a * matrix_dict['Is_ov'] + offsets
+            sigma2 = (
+                matrix_dict['sigma_w_ov']**2 +
+                (a * matrix_dict['sigma_s_ov'])**2
+            )
+            resid = matrix_dict['Iw_ov'] - model
+            chi2 = np.sum((resid**2) / sigma2)
+            # Optional hard constraint: no negative modeled intensity
+            # if np.any(model < 0):
+            #     chi2 += 1e12
+            return chi2
+        mean_int = np.mean(matrix_dict['Iw_ov'])
+        bounds = [(0.1, 10.0)] + [(-20*mean_int, 20*mean_int)] *\
+                matrix_dict['num_frames']
+        result = differential_evolution(loss, bounds,
+                                        strategy='best1bin',
+                                        recombination=0.7)
+        return result.x[0], result.x[1:], result
+
+    def rebin_overlap(
+        self,
+        a,
+        b,
+        qmin=None,
+        qmax=None,
+        n_bins=200,
+    ):
+        """
+        Merge SAXS and aligned WAXS in the overlap region and
+        store merged result in self.ms_saxs.ms.
+        Parameters
+        ----------
+        a : float
+            Global SAXS->WAXS scale factor
+        b : ndarray
+            Frame-wise offsets (n_frames,)
+        """
+        # --- unpack ---
+        q_s, I_s, s_s, _ = self.ms_saxs.build_saxs_matrix()
+        q_w, I_w, s_w, _ = self.ms_waxs.build_saxs_matrix()
+        n_qs, n_frames = I_s.shape
+        # --- apply alignment ---
+        I_w_aligned = (I_w - b) / a
+        s_w_aligned = s_w / abs(a)
+        # --- overlap definition ---
+        qmin_auto = max(q_s.min(), q_w.min())
+        qmax_auto = min(q_s.max(), q_w.max())
+        qmin = qmin if qmin is not None else qmin_auto
+        qmax = qmax if qmax is not None else qmax_auto
+        mask_s_ov = (q_s >= qmin) & (q_s <= qmax)
+        mask_w_ov = (q_w >= qmin) & (q_w <= qmax)
+        # --- rebin ---
+        # --- define common q grid in overlap ---
+        q_bins = np.linspace(qmin, qmax, n_bins + 1)
+        q_centers = 0.5 * (q_bins[:-1] + q_bins[1:])
+        # --- allocate merged arrays ---
+        I_merge = np.full((n_bins, n_frames), np.nan)
+        s_merge = np.full((n_bins, n_frames), np.nan)
+        # --- frame-wise merge ---
+        for t in range(n_frames):
+            q_ov = np.concatenate([q_s[mask_s_ov], q_w[mask_w_ov]])
+            I_ov = np.concatenate([
+                I_s[mask_s_ov, t],
+                I_w_aligned[mask_w_ov, t]
+            ])
+            s_ov = np.concatenate([
+                s_s[mask_s_ov, t],
+                s_w_aligned[mask_w_ov, t]
+            ])
+            for i in range(n_bins):
+                m = (q_ov >= q_bins[i]) & (q_ov < q_bins[i + 1])
+                if not np.any(m):
+                    continue
+                w = 1.0 / (s_ov[m] ** 2)
+                I_merge[i, t] = np.sum(I_ov[m] * w) / np.sum(w)
+                s_merge[i, t] = np.sqrt(1.0 / np.sum(w))
+        # --- prepend / append pure SAXS (frame-wise) ---
+        mask_lo = q_s < qmin
+        mask_hi = q_w > qmax
+        valid_bins = np.any(~np.isnan(I_merge), axis=1)
+        q_centers = q_centers[valid_bins]
+        I_merge = I_merge[valid_bins, :]
+        s_merge = s_merge[valid_bins, :]
+        q_final = np.concatenate([
+            q_s[mask_lo],
+            q_centers,
+            q_w[mask_hi],
+        ])
+        I_final = np.vstack([
+            I_s[mask_lo, :],
+            I_merge,
+            I_w_aligned[mask_hi, :],
+        ])
+        s_final = np.vstack([
+            s_s[mask_lo, :],
+            s_merge,
+            s_w_aligned[mask_hi, :],
+        ])
+        # --- save per frame ---
+        for t, m in enumerate(self.ms_saxs.ms):
+            path = Path(m.path)
+            filename = f"merge.{m.filename}"
+            outdf = pd.DataFrame({
+                "q": q_final,
+                "I": I_final[:, t],
+                "err_I": s_final[:, t],
+            })
+            m.save_data(path / filename, df=outdf)
+        return q_final, I_final, s_final
+
+    def plot_alignment_diagnostics(
+        self,
+        a,
+        b,
+        qmin=None,
+        qmax=None,
+        chi2_ylim=(0, 10),
+    ):
+        """
+        Diagnostic plot for SAXS/WAXS alignment.
+        Shows per-frame reduced chi^2 and fitted offsets b_t.
+        Parameters
+        ----------
+        a : float
+            Global SAXS->WAXS scale factor
+        b : ndarray
+            Frame-wise offsets (n_frames,)
+        """
+
+        import matplotlib.pyplot as plt
+        # --- rebuild overlap (guarantees consistency) ---
+        md = self.interpolate_matrix(qmin=qmin, qmax=qmax)
+        Iw = md['Iw_ov']
+        Is = md['Is_ov']
+        sw = md['sigma_w_ov']
+        ss = md['sigma_s_ov']
+        n_q, n_frames = Iw.shape
+        chi2_per_frame = np.zeros(n_frames)
+        for i in range(n_frames):
+            # model = a * Is[:, i] + b.mean()
+            model = a * Is[:, i] + b[i]
+            resid = Iw[:, i] - model
+            sigma2 = sw[:, i]**2 + (a * ss[:, i])**2
+            chi2_per_frame[i] = np.mean(resid**2 / sigma2)
+        # --- plotting ---
+        fig, ax1 = plt.subplots(figsize=(6, 2.5))
+        ax1.plot(
+            chi2_per_frame,
+            color="tab:red",
+            lw=1.5,
+            label=r"$\chi^2_\mathrm{red}$",
+        )
+        ax1.set_xlabel("Frame number")
+        ax1.set_ylabel(r"Reduced $\chi^2$", color="tab:red")
+        ax1.tick_params(axis="y", labelcolor="tab:red")
+        ax1.set_ylim(*chi2_ylim)
+        ax2 = ax1.twinx()
+        ax2.plot(
+            b,
+            color="tab:blue",
+            alpha=0.5,
+            lw=1.2,
+            label=r"Offset $b_t$",
+        )
+        ax2.set_ylabel("Background offset $b$", color="tab:blue")
+        ax2.tick_params(axis="y", labelcolor="tab:blue")
+        plt.title("SAXS–WAXS Global Alignment Diagnostics")
+        fig.tight_layout()
+        return chi2_per_frame
+
+
 
 @dataclass
 class CoupledMeasurement:
@@ -77,7 +327,7 @@ class CoupledMeasurement:
         q_values = None
         for m in self.saxs_list:
             df = m.get_data()
-            df = df.iloc[1:]  # your skip logic
+            # df = df.iloc[0:]  # your skip logic
             if q_values is None:
                 q_values = df.q.to_numpy()
             I_list.append(df.I.to_numpy())
@@ -99,7 +349,7 @@ class CoupledMeasurement:
             times = []
             rgdf = self.saxs_list.get_rgs(qmin=qmin, qmax=qmax,
                                           load=load, I00=0.01, Rg0=12,
-                                          bounds=((10, 0), (20, 0.1)))
+                                          bounds=((10, 0), (20, 1.0)))
             for frame, m in enumerate(self.saxs_list):
                 frames.append(frame+1)
                 times.append(m.time)
@@ -274,7 +524,7 @@ class CoupledMeasurement:
         preprocess_uv_mode="identity",
         preprocess_uv_kwargs=None,
         scale_bounds=(0.5, 5.0),
-        shift_bounds=(-1000.0, 1000.0),
+        shift_bounds=(-3000.0, 3000.0),
         scale0shift0=[2.2, -1400],
     ):
         """

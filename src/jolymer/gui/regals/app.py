@@ -26,6 +26,7 @@ from jolymer.gui.regals.views.alignment import AlignmentWindow
 from jolymer.gui.regals.state import BioREGALSState
 from jolymer.gui.regals.console.ipython_widget import IPythonConsole
 from jolymer.sas.bioREGALS import bioREGALS
+import jolymer.os_utility as osu
 
 
 # -----------------------------
@@ -292,9 +293,9 @@ class RegalsMainWindow(QMainWindow):
             MM =  self.state.mixture
             params, resid, exit_cond = self.state.regals_result
             uv_scales = [comp.uv_scale for comp in MM.components]
+            axs[0, 0].plot(x, MM.uv_meas, label="UV", color='black',
+                           linestyle='', marker='o', alpha=0.1)
             axs[0, 0].plot(x, MM.concentrations*np.array(uv_scales))
-            axs[0, 0].plot(x, MM.uv_meas, label="UV",
-                           linestyle='', marker='o', alpha=0.5)
             axs[0,0].legend()
             #chi2 vs x
             axs[1, 0].plot(x, np.mean(resid ** 2, 0))
@@ -311,11 +312,12 @@ class RegalsMainWindow(QMainWindow):
                 df = pd.DataFrame({'q':q,
                                    'I': Ii,
                                    'err_I': sigmai})
-                # m.save_data(f'regals_output/{NAME}-P{i}.dat', df=df)
                 m = self.state.saxs.ms[0]
+                osu.create_path('regals_output')
+                m.save_data(f'regals_output/{self.state.saxs.name}-P{i}.dat', df=df)
                 Rgdict = m.get_rg(df=df, qmin=0.02, qmax=0.1)
                 Rg = Rgdict['Rg']
-                print(f'P{i}: I_max = ', Ii.max())
+                self.console._append_plain_text(f'P{i}: I_max = ', Ii.max())
                 axs[1, 1].errorbar(q, Ii/Ii.max(), sigmai,
                                    label=f'P{i}; rg={Rg:.2f} A')
             axs[1, 1].set_xscale('log')
@@ -381,9 +383,7 @@ class RegalsMainWindow(QMainWindow):
             return
 
         try:
-            print('test 3')
             self.state.load_from_json(Path(path))
-            print('test 3')
             # self.state.rebuild_from_state()
         except Exception as e:
             QMessageBox.critical(self, "Load failed", str(e))

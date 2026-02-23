@@ -93,35 +93,32 @@ class bioMIXTURE(mixture):
             "class": "bioMIXTURE",
             "components": [c.to_dict() for c in self.components],
             # REGALS / mixture hyperparameters
-            "lambda_concentration": self.lambda_concentration.tolist(),
-            "lambda_profile": self.lambda_profile.tolist(),
-            "u_concentration": self.u_concentration,
-            "u_profile": self.u_profile,
+            "lambda_concentration": list(self.lambda_concentration),
+            "lambda_profile": list(self.lambda_profile),
+            "u_concentration": list(self.u_concentration),
+            "u_profile": list(self.u_profile),
             # UV-specific additions
-            "uv_meas": None if self.uv_meas is None else self.uv_meas.tolist(),
-            "uv_err": None if self.uv_err is None else self.uv_err.tolist(),
+            "uv_meas": None if self.uv_meas is None else list(self.uv_meas),
+            "uv_err": None if self.uv_err is None else list(self.uv_err),
             "uv_weight": self.uv_weight,
         }
 
-        @classmethod
-        def from_dict(cls, d):
-            components = [
-                bioComponent.from_dict(cd)
-                for cd in d["components"]
-            ]
-
-            return cls(
-                components=components,
-
-                lambda_concentration=np.array(d.get("lambda_concentration", [])),
-                lambda_profile=np.array(d.get("lambda_profile", [])),
-                u_concentration=d.get("u_concentration", []),
-                u_profile=d.get("u_profile", []),
-
-                uv_meas=None if d["uv_meas"] is None else np.array(d["uv_meas"]),
-                uv_err=None if d["uv_err"] is None else np.array(d["uv_err"]),
-                uv_weight=d.get("uv_weight", 1.0),
-            )
+    @classmethod
+    def from_dict(cls, d):
+        components = [
+            bioComponent.from_dict(cd)
+            for cd in d["components"]
+        ]
+        return cls(
+            components=components,
+            lambda_concentration=np.array(d.get("lambda_concentration", [])),
+            lambda_profile=np.array(d.get("lambda_profile", [])),
+            u_concentration=d.get("u_concentration", []),
+            u_profile=d.get("u_profile", []),
+            uv_meas=None if d["uv_meas"] is None else np.array(d["uv_meas"]),
+            uv_err=None if d["uv_err"] is None else np.array(d["uv_err"]),
+            uv_weight=d.get("uv_weight", 1.0),
+        )
 
 
 

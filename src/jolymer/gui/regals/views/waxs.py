@@ -55,7 +55,7 @@ class WAXSWindow(QMainWindow):
         layout.addLayout(frame_layout)
 
         # --- SAXS kind and q parameters ---
-        self.waxs_kind_edit = QLineEdit("I0")
+        self.waxs_kind_edit = QLineEdit("Iq")
         self.qstar_edit = QDoubleSpinBox()
         self.qstar_edit.setDecimals(3)
         self.qstar_edit.setSingleStep(0.01)
@@ -69,14 +69,14 @@ class WAXSWindow(QMainWindow):
         if self.state.cm_waxs is None:
             self.qmax_edit.setValue(0.4)
             self.qmin_edit.setValue(0.04)
-            self.qstar_edit.setValue(0.1)
+            self.qstar_edit.setValue(0.9)
         else:
             cm_waxs = self.state.cm_waxs
             self.qmax_edit.setValue(cm_waxs.qmax)
             self.qmin_edit.setValue(cm_waxs.qmin)
             self.qstar_edit.setValue(cm_waxs.qstar)
-        self.start_idx.setValue(0)
-        self.end_idx.setValue(500)
+        self.start_idx.setValue(state.saxs.min_seqi)
+        self.end_idx.setValue(state.saxs.max_seqi)
 
 
         form_layout = QFormLayout()
@@ -114,14 +114,22 @@ class WAXSWindow(QMainWindow):
         start, end = self.start_idx.value(), self.end_idx.value()
         OUV = self.state.uv
         sample = self.state.sample
+        cm_saxs = self.state.cm_saxs
+        if cm_saxs is None:
+            self.state.console._append_plain_text("Load SAXS first")
+            return
         try:
             ms_waxs = ms_from_folder(path, file_prefix=name, max_seqi=end,
                                      min_seqi=start)
-            cm_waxs = CoupledMeasurement(ms_waxs, OUV, ac6gt6)
-            cm_waxs._alignment = cm_saxs._alignment
-            cm_waxs._alignment["saxs_kind"] = "Iq"
-            cm_waxs._alignment["qstar"] = 5.0
-            cm_waxs._uv_on_saxs = cm_saxs._uv_on_saxs[0:len(ms_waxs)]
+            cm_waxs = CoupledMeasurement(ms_waxs, OUV, sample)
+            cm_waxs._alignment = cm_saxs._alignment.copy()
+            cm_waxs._alignment.update({
+                "saxs_kind": self.waxs_kind_edit.text(),
+                "qstar": self.qstar_edit.value(),
+                "qmin": self.qmin_edit.value(),
+                "qmax": self.qmax_edit.value(),
+            })
+            cm_waxs._uv_on_saxs = cm_saxs._uv_on_saxs
             to_regals_waxs = cm_waxs.to_regals()
             q_waxs = to_regals_waxs["q"]
             I_waxs = to_regals_waxs["I"]
@@ -129,8 +137,8 @@ class WAXSWindow(QMainWindow):
             x_waxs = to_regals_waxs["x"]
             uv_meas_waxs = to_regals_waxs["uv_meas"]
 
-            cm_waxs = CoupledMeasurement(ms_waxs, OUV, sample)
             self.state.waxs = ms_waxs
+            self.state.to_regals_waxs = to_regals_waxs
             self.state.cm_waxs = cm_waxs
             self.update_plot()
         except Exception as e:
@@ -143,14 +151,6 @@ class WAXSWindow(QMainWindow):
         if self.state.cm_waxs is None:
             return
         try:
-            waxs_kind = self.waxs_kind_edit.text()
-            qstar = self.qstar_edit.value()
-            qmin = self.qmin_edit.value()
-            qmax = self.qmax_edit.value()
-            df = self.state.cm_waxs.get_saxs_scalar(kind=saxs_kind,
-                                                    qstar=qstar,
-                                                    qmin=qmin,
-                                                    qmax=qmax)
             self.ax.clear()
             self.state.cm_waxs.plot_alignment(ax=self.ax)
             self.ax.legend()
