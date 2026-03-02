@@ -60,6 +60,8 @@ class SAXS_Measurement(Measurement):
     imagepath: str=''
     waxs_imagepath: str=''
 
+    seqi: int=0
+
     def __post_init__(self):
         if self.angular_unit=='A':
             self.str_angular_unit ='$\\mathrm{\\AA^{-1}}$'

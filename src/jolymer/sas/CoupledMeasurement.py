@@ -12,6 +12,7 @@ from jolymer.uv.onlineUV import onlineUV
 
 def ms_from_folder(path='workdirs/ACGT6c80_waxs', file_prefix='waxs',
                    min_seqi=0, max_seqi=100000, q_beamstop=0.006,
+                   exclude_seqi=[], frame_time=2.1,
                    angular_unit='A'):
     import os
     import re
@@ -29,17 +30,20 @@ def ms_from_folder(path='workdirs/ACGT6c80_waxs', file_prefix='waxs',
     sigma_list = []
     q_values = None
     mlist = []
-    time=0
     for i, filename in enumerate(sorted_filenames):
-        if i>max_seqi:
+        seqi = filename.split(f'{file_prefix}_')[1].split('.dat')[0]
+        seqi = int(seqi)
+        if seqi>max_seqi:
             break
-        if i<min_seqi:
+        if seqi<min_seqi:
+            continue
+        if seqi in exclude_seqi:
             continue
         m = SAXS_Measurement(path=SRC_DIR, filename=filename,
                              qmin=q_beamstop, angular_unit=angular_unit)
-        m.time = time
+        m.time = frame_time * float(seqi)
+        m.seqi = seqi
         mlist.append(m)
-        time += 2.1
     print("got number of ms:", len(mlist))
     out =  Ms(mlist)
     out.name = file_prefix
@@ -72,10 +76,11 @@ class AlignSAXS_WAXS:
                    "sigma_w": sigma_w}
         qmin_auto = max(q_s.min(), q_w.min())
         qmax_auto = min(q_s.max(), q_w.max())
+        print('auto q:', qmin_auto, qmax_auto)
         qmin = qmin if qmin is not None else qmin_auto
         qmax = qmax if qmax is not None else qmax_auto
         mask_w = (q_w > qmin) & (q_w < qmax)
-        if mask_w.sum() < 5:
+        if mask_w.sum() < 3:
             raise ValueError("Overlap region too small")
         outdict['num_frames'] = I_w.shape[1]
         outdict['qw_ov'] = q_w[mask_w]
@@ -97,6 +102,7 @@ class AlignSAXS_WAXS:
         qmin=None,
         qmax=None,
         use_errors=True,
+        global_offset=False
     ):
         """
         Global alignment of WAXS to SAXS using all datasets simultaneously.
@@ -108,17 +114,6 @@ class AlignSAXS_WAXS:
         """
         matrix_dict = self.interpolate_matrix(qmin=qmin,
                                               qmax=qmax)
-        # def loss(params):
-        #     a = params[0]
-        #     offsets = params[1:]
-        #     model = a * matrix_dict['Is_ov'] + offsets
-        #     total_sigma = np.sqrt(matrix_dict['sigma_w_ov']**2 +\
-        #             (a * matrix_dict['sigma_s_ov'])**2)
-        #     weighted_mae = np.mean(np.abs(matrix_dict['Iw_ov'] - model) / total_sigma)
-        #     penalty = 0
-        #     if np.any(model < 0):
-        #         penalty = np.sum(np.abs(model[model < 0])) * 1e6
-        #     return weighted_mae + penalty
         def loss(params):
             a = params[0]
             offsets = params[1:]  # shape: (n_frames,)
@@ -129,13 +124,12 @@ class AlignSAXS_WAXS:
             )
             resid = matrix_dict['Iw_ov'] - model
             chi2 = np.sum((resid**2) / sigma2)
-            # Optional hard constraint: no negative modeled intensity
-            # if np.any(model < 0):
-            #     chi2 += 1e12
             return chi2
         mean_int = np.mean(matrix_dict['Iw_ov'])
-        bounds = [(0.1, 10.0)] + [(-20*mean_int, 20*mean_int)] *\
+        bounds = [(0.0, 10.0)] + [(-0.5*np.abs(mean_int), 0.5*np.abs(mean_int))] *\
                 matrix_dict['num_frames']
+        if global_offset:
+            bounds = [(0.0, 10.0)] + [(-0.5*np.abs(mean_int), 0.5*np.abs(mean_int))]
         result = differential_evolution(loss, bounds,
                                         strategy='best1bin',
                                         recombination=0.7)
@@ -147,6 +141,7 @@ class AlignSAXS_WAXS:
         b,
         qmin=None,
         qmax=None,
+        minus_df=None,
         n_bins=200,
     ):
         """
@@ -221,12 +216,15 @@ class AlignSAXS_WAXS:
             s_w_aligned[mask_hi, :],
         ])
         # --- save per frame ---
+        minusI = 0
+        if not minus_df is None:
+            minusI = minus_df.I
         for t, m in enumerate(self.ms_saxs.ms):
             path = Path(m.path)
             filename = f"merge.{m.filename}"
             outdf = pd.DataFrame({
                 "q": q_final,
-                "I": I_final[:, t],
+                "I": I_final[:, t] - minusI,
                 "err_I": s_final[:, t],
             })
             m.save_data(path / filename, df=outdf)
@@ -239,6 +237,7 @@ class AlignSAXS_WAXS:
         qmin=None,
         qmax=None,
         chi2_ylim=(0, 10),
+        use_mean=False
     ):
         """
         Diagnostic plot for SAXS/WAXS alignment.
@@ -262,7 +261,10 @@ class AlignSAXS_WAXS:
         chi2_per_frame = np.zeros(n_frames)
         for i in range(n_frames):
             # model = a * Is[:, i] + b.mean()
-            model = a * Is[:, i] + b[i]
+            if use_mean:
+                model = a * Is[:, i] + b.mean()
+            else:
+                model = a * Is[:, i] + b[i]
             resid = Iw[:, i] - model
             sigma2 = sw[:, i]**2 + (a * ss[:, i])**2
             chi2_per_frame[i] = np.mean(resid**2 / sigma2)
@@ -351,7 +353,7 @@ class CoupledMeasurement:
                                           load=load, I00=0.01, Rg0=12,
                                           bounds=((10, 0), (20, 1.0)))
             for frame, m in enumerate(self.saxs_list):
-                frames.append(frame+1)
+                frames.append(m.seqi)
                 times.append(m.time)
             return pd.DataFrame({
                 'frame': frames,
@@ -367,7 +369,7 @@ class CoupledMeasurement:
             I0s = []
             errI0s = []
             for frame, m in enumerate(self.saxs_list):
-                frames.append(frame+1)
+                frames.append(m.seqi)
                 times.append(m.time)
                 I0s.append(float(m.get_data()['I'][idx]))
                 errI0s.append(float(m.get_data()['err_I'][idx]))
@@ -477,6 +479,7 @@ class CoupledMeasurement:
         uv_y = self._uv_on_saxs["Abs"]
         outdict = {
                 'x': np.array(dfX.time),
+                'idx': np.array(dfX.frame),
                 'q': self._q,
                 'I': self._I,
                 'sigma': self._sigma,

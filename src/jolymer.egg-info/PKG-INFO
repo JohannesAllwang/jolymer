@@ -1,4 +1,4 @@
-Metadata-Version: 2.2
+Metadata-Version: 2.4
 Name: jolymer
 Version: 0.0.2
 Summary: Library to assist the handling of experimental data
@@ -13,6 +13,7 @@ Description-Content-Type: text/markdown
 License-File: LICENSE
 Dynamic: author
 Dynamic: license
+Dynamic: license-file
 Dynamic: summary
 
 # Johannes Allwang Polymer Analysis

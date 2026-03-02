@@ -89,7 +89,7 @@ class biosaxs13A9M(SAXS_Measurement):
                     pass
         out = pd.DataFrame({'frame_number' : np.linspace(1,len_frames,
                                                          num=len(civiSMPs)),
-                         'civiSMS': civiSMPs,
+                         'civiSMP': civiSMPs,
                          'rigiSMP': rigiSMPs,
                          'expSMP': expSMPs})
         return out
@@ -138,7 +138,8 @@ class biosaxs13A9M(SAXS_Measurement):
         return length
 
     def integrate1d(self, filename=None, waxs=False, frame=None,
-                    buffer=False, npt=200):
+                    buffer=False, npt=200,
+                    normalize_by='civi'):
         import pyFAI
         from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
 
@@ -168,30 +169,47 @@ class biosaxs13A9M(SAXS_Measurement):
         T = float(dat_header['Sample Transmission coefficient'])
         if buffer:
             T = float(dat_header['Empty Cell Transmission coefficient'])
-        # count_time = self.get_count_time(filepath=path)
         count_time = 1 # wile using rigi to normalize
+        if normalize_by == 'time':
+            count_time = self.get_count_time(filepath=path)
         I = I / T / count_time
         errI = errI/T/count_time
         df = pd.DataFrame({'q': q, 'I_sample': I, 'err_I_sample': errI})
         return df
 
     def integrade_subtract(self, filename=None, filename_buffer=None, waxs=False, frame=None,
-                           npt=200, adjustTMbuffer=1.0):
+                           npt=200, adjustTMbuffer=1.0, normalize_by='civi'):
         df_sample = self.integrate1d(filename=filename, waxs=waxs, frame=frame,
-                                     npt=npt)
-        df_rigi_sample = self.get_rigi()
-        rigi_sample = df_rigi_sample.loc[
-            df_rigi_sample.frame_number == frame + 1,  # frame numbering convention
-            'rigiSMP'
-        ].iloc[0]
+                                     npt=npt, normalize_by=normalize_by)
         df_buffer = self.integrate1d(filename=filename, waxs=waxs,
-                                     npt=npt, buffer=True)
-        df_rigi_buffer = self.get_rigi(buffer=True)
-        # print(df_rigi_buffer)
-        rigi_buffer = df_rigi_buffer.loc[
-            df_rigi_buffer.frame_number == 1,  # frame numbering convention
-            'rigiSMP'
-        ].iloc[0]
+                                     npt=npt, buffer=True, normalize_by=normalize_by)
+        if normalize_by == 'time':
+            rigi_sample = 100000
+            rigi_buffer = 100000
+        elif normalize_by == 'rigi':
+            df_rigi_sample = self.get_rigi()
+            rigi_sample = df_rigi_sample.loc[
+                df_rigi_sample.frame_number == frame + 1,  # frame numbering convention
+                'rigiSMP'
+            ].iloc[0]
+            df_rigi_buffer = self.get_rigi(buffer=True)
+            # print(df_rigi_buffer)
+            rigi_buffer = df_rigi_buffer.loc[
+                df_rigi_buffer.frame_number == 1,  # frame numbering convention
+                'rigiSMP'
+            ].iloc[0]
+        elif normalize_by == 'civi':
+            df_rigi_sample = self.get_rigi()
+            rigi_sample = df_rigi_sample.loc[
+                df_rigi_sample.frame_number == frame + 1,  # frame numbering convention
+                'civiSMP'
+            ].iloc[0]
+            df_rigi_buffer = self.get_rigi(buffer=True)
+            # print(df_rigi_buffer)
+            rigi_buffer = df_rigi_buffer.loc[
+                df_rigi_buffer.frame_number == 1,  # frame numbering convention
+                'civiSMP'
+            ].iloc[0]
         # print('rigi sample:', rigi_sample)
         # print('rigi buffer:', rigi_buffer)
         df = df_sample.copy()
