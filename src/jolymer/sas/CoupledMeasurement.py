@@ -101,6 +101,7 @@ class AlignSAXS_WAXS:
         self,
         qmin=None,
         qmax=None,
+        bg_bounds=0.5,
         use_errors=True,
         global_offset=False
     ):
@@ -126,10 +127,10 @@ class AlignSAXS_WAXS:
             chi2 = np.sum((resid**2) / sigma2)
             return chi2
         mean_int = np.mean(matrix_dict['Iw_ov'])
-        bounds = [(0.0, 10.0)] + [(-0.5*np.abs(mean_int), 0.5*np.abs(mean_int))] *\
+        bounds = [(0.0, 10.0)] + [(-bg_bounds*np.abs(mean_int), bg_bounds*np.abs(mean_int))] *\
                 matrix_dict['num_frames']
         if global_offset:
-            bounds = [(0.0, 10.0)] + [(-0.5*np.abs(mean_int), 0.5*np.abs(mean_int))]
+            bounds = [(0.0, 10.0)] + [(-bg_bounds*np.abs(mean_int), bg_bounds*np.abs(mean_int))]
         result = differential_evolution(loss, bounds,
                                         strategy='best1bin',
                                         recombination=0.7)
@@ -526,7 +527,7 @@ class CoupledMeasurement:
         I0_min=0,
         preprocess_uv_mode="identity",
         preprocess_uv_kwargs=None,
-        scale_bounds=(0.5, 5.0),
+        scale_bounds=(0.99, 1.01),
         shift_bounds=(-3000.0, 3000.0),
         scale0shift0=[2.2, -1400],
     ):

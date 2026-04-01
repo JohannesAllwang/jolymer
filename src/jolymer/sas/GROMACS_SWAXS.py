@@ -480,6 +480,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         scale = None
         offset = None
              # p0=None, scale=None, offset=None, bounds=(-np.inf, np.inf))
+        print('maxqfit', maxqfit, 'dfqmax', df.q.max())
         if maxqfit < df.q.max():
             if rerun_filename is None:
                 df_maxqfit = df.copy()
@@ -489,6 +490,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
             odict = self.scale_and_offset_fit(df_data, df_maxqfit)
             scale = odict['scale']
             offset = odict['offset']
+            print('maxq', scale, offset)
         odict = self.scale_and_offset_fit(df_data, df, scale=scale, offset=offset)
         df = odict['df']
         chi2 = odict['chi2']
@@ -511,146 +513,235 @@ class GROMACS_SWAXS(SAXS_Measurement):
         outdict['chi2'].append(chi2)
         return outdict
 
-    def plot_spectra(self, filename=None, path=None,
-                     plot=True, get_Rg=False, maxqfit=np.inf,
-                     rerun_filename=None, Rg_filter=(0, np.inf),
-                     chi2_filter=(0, np.inf), angular_unit='A',
-                      every_n=1, max_out=1000, index_list=None,
-                     spectra_colors=None,
-                     spectra_legend=True,
-                     spectra_timeis=[0,200],
-                     **kwargs):
-        if path is None:
-            path = self.mdpath
-        if filename is None:
-            filename = self.spectra_filename
-        outdict = {'time': [],
-                   'df': [],
-                   'chi2': [],
-                   'Rg': [],
-                   'err_Rg': [],
-                   'Rchi2': [],
-                   'I0': [],
-                   'err_I0': []}
-        file = Path(path, filename)
-        if filename is None:
-            file = self.get_spectra_filename()
+    def plot_spectra(self, filename=None, path=None, plot=True,
+                     get_Rg=False, maxqfit=np.inf, rerun_filename=None,
+                     Rg_filter=(0, np.inf), chi2_filter=(0, np.inf),
+                     angular_unit='A', every_n=1, max_out=1000, index_list=None,
+                     spectra_colors=None, spectra_legend=True,
+                     spectra_timeis=[0,200], q_cutoff=0.15, **kwargs):
+        path = self.mdpath if path is None else path
+        filename = self.spectra_filename if filename is None else filename
+        file = Path(path, filename) if filename is not None else self.get_spectra_filename()
+        outdict = {'time': [], 'df': [], 'chi2': [], 'Rg': [], 'err_Rg': [], 'Rchi2': [], 'I0': [], 'err_I0': []}
         df_data = self.get_data(angular_unit=angular_unit, scale=self.shift)
-        # if self.angular_unit == 'A':
-        #     if angular_unit == 'nm':
-        #         df_data.q = df_data.q*10
-        # if self.angular_unit == 'nm':
-        #     if angular_unit == 'A':
-        #         df_data.q = df_data.q/10
         ax = kwargs.pop('ax') if 'ax' in kwargs else None
         ax_res = kwargs.pop('ax_res') if 'ax_res' in kwargs else None
         if plot:
             if ax is None:
-                fig = plt.figure(figsize=(self.plot_standardwidth,self.plot_longheight))
-                gs = fig.add_gridspec(2, 1, height_ratios=[3, 1])  # 3:1 ratio
+                fig = plt.figure(figsize=(self.plot_standardwidth, self.plot_longheight))
+                gs = fig.add_gridspec(2, 1, height_ratios=[3, 1])
                 ax = fig.add_subplot(gs[0])
                 ax_res = fig.add_subplot(gs[1], sharex=ax)
             else:
                 fig = ax.get_figure()
             if ax_res is None:
-                fig_res, ax_res = plt.subplots()
-            ax_res.plot([df_data.q.min(), df_data.q.max()], [0,0])
-            ax = self.plot_data(ax=ax, label=f'{self.name} data', marker='o', linestyle='',
-                                scale=self.shift,
-                                unit=angular_unit, **kwargs)
+                _, ax_res = plt.subplots()
+            ax_res.plot([df_data.q.min(), df_data.q.max()], [0, 0])
+            ax = self.plot_data(ax=ax, label=f'{self.name} data', marker='o', linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
         out = self.get_waxs_spectra(file, every_n=every_n, max_out=max_out)
-        df_data['I'] = df_data.I
-        df_data['err_I'] = df_data.err_I
-        dfs = out['dfs'][1::]
-        times = out['times'][1::]
-        if not rerun_filename is None:
-            rerun_out = self.get_waxs_spectra(Path(path, rerun_filename), every_n=every_n, max_out=max_out)
-            rerun_dfs = rerun_out['dfs'][1::]
-
-        if not index_list is None:
-            dfs = [out['dfs'][i] for i in index_list]
-            times = [out['times'][i] for i in index_list]
-        colori = 0
-        for df, time in zip(dfs, times):
-            df['fit'] = df.I
-            df = df[df.q>0.15]
-            if angular_unit == "A":  # Ångström
-                df.loc[:, "q"] /= 10
-            scale = None
-            offset = None
-            if maxqfit < df.q.max():
-                if rerun_filename is None:
-                    df_maxqfit = df.copy()
-                else:
-                    df_maxqfit = ''
-                df_maxqfit = df_maxqfit[df_maxqfit.q < maxqfit]
-                odict = self.scale_and_offset_fit(df_data, df_maxqfit)
-                scale = odict['scale']
-                offset = odict['offset']
-            odict = self.scale_and_offset_fit(df_data, df, scale=scale, offset=offset)
-                 # p0=None, scale=None, offset=None, bounds=(-np.inf, np.inf))
-            df = odict['df']
-            chi2 = odict['chi2']
-            if chi2 < chi2_filter[0]:
-                continue
-            if chi2 > chi2_filter[1]:
-                continue
+        dfs, times = out['dfs'][1::], out['times'][1::]
+        if index_list is not None:
+            dfs = [dfs[i] for i in index_list]
+            times = [times[i] for i in index_list]
+        for i, (df, time) in enumerate(zip(dfs, times)):
+            df = self._prepare_spectrum(df, angular_unit=angular_unit, q_cutoff=q_cutoff)
+            df, chi2 = self._fit_spectrum(df_data, df, maxqfit=maxqfit)
+            if not (chi2_filter[0] <= chi2 <= chi2_filter[1]): continue
             time_ns = time * 2e-6
-            # print(time_ns)
             if get_Rg:
-                qmin = max(0.1, self.qmin)
-                qmax = max(1, self.qmin+1.0)
-                dfr = df.copy()
-                if angular_unit == 'A':
-                    dfr.q = dfr.q * 10
-                    qmin, qmax = 10*qmin, 10*qmax
-                Rgdict = SAXS_Measurement.get_rg(self, df=dfr, plot=plot, ax=ax,
-                                                 qmin=qmin, qmax=qmax)
-                # print('rgdict', Rgdict)
+                Rgdict = self._compute_rg(df, angular_unit=angular_unit, plot=plot, ax=ax)
                 Rg = Rgdict['Rg']
-                if Rg < Rg_filter[0]:
-                    continue
-                if Rg > Rg_filter[1]:
-                    continue
-                # print('rgdict', Rgdict)
-                for key in Rgdict.keys():
-                    # print(Rgdict[key])
-                    if key == 'chi2':
-                        outdict['Rchi2'].append(Rgdict[key])
-                    else:
-                        outdict[key].append(Rgdict[key])
+                if not (Rg_filter[0] <= Rg <= Rg_filter[1]): continue
+                for k, v in Rgdict.items():
+                    if k == 'chi2': outdict['Rchi2'].append(v)
+                    else: outdict[k].append(v)
             outdict['df'].append(df)
             outdict['chi2'].append(chi2)
             outdict['time'].append(time_ns)
             if plot:
-                color = None
-                if not spectra_colors is None:
-                    color = spectra_colors[colori]
-                if isinstance(spectra_legend, list):
-                    label = spectra_legend[colori]
-                elif spectra_legend:
-                    label = f'$t = {time_ns:.1f}$ ns; $\\chi^2={chi2:.1f}$'
-                else:
-                    label = None
-                colori += 1
-                ax.errorbar(df.q, df.I, fmt='-', color=color,
-                            label=label)
-                ax_res.errorbar(df.q, df.res, fmt='o-', color=color,
-                            label='$\\chi^2={:.1f}$'.format(chi2))
-            else:
-                ax=None
-
+                self._plot_single(ax, ax_res, df, chi2, time_ns, i, spectra_colors, spectra_legend)
         if plot:
             ax.legend(fontsize='xx-small')
             ax_res.set_xlabel(ax.get_xlabel())
             ax_res.set_ylabel('Residuals')
-            # ax_res.legend()
-            # ax_res.set_xscale('log')
-            outdict['fig'] = fig
-            outdict['ax'] = ax
-            outdict['ax_res'] = ax_res
-        # ax.set_ylim(1e3, 1e7)
+            outdict['fig'], outdict['ax'], outdict['ax_res'] = fig, ax, ax_res
         return outdict
+
+
+    def _prepare_spectrum(self, df, angular_unit='A', q_cutoff=0.15):
+        df = df.copy()
+        df['fit'] = df.I
+        df = df[df.q > q_cutoff]
+        if angular_unit == "A": df.loc[:, "q"] /= 10
+        return df
+
+
+    def _fit_spectrum(self, df_data, df, maxqfit=np.inf):
+        scale = offset = chi2 = None
+        if maxqfit < df.q.max():
+            df_fit = df[df.q < maxqfit]
+            odict = self.scale_and_offset_fit(df_data, df_fit)
+            scale, offset, chi2 = odict['scale'], odict['offset'], odict['chi2']
+        odict = self.scale_and_offset_fit(df_data, df, scale=scale, offset=offset)
+        return odict['df'], chi2 if chi2 is not None else odict['chi2']
+
+
+    def _compute_rg(self, df, angular_unit='A', plot=False, ax=None):
+        qmin, qmax = max(0.1, self.qmin), max(1, self.qmin + 1.0)
+        dfr = df.copy()
+        if angular_unit == 'A': dfr.q *= 10; qmin, qmax = 10*qmin, 10*qmax
+        return SAXS_Measurement.get_rg(self, df=dfr, plot=plot, ax=ax, qmin=qmin, qmax=qmax)
+
+
+    def _plot_single(self, ax, ax_res, df, chi2, time_ns, i, spectra_colors, spectra_legend):
+        color = spectra_colors[i] if spectra_colors is not None else None
+        label = spectra_legend[i] if isinstance(spectra_legend, list) else (f'$t = {time_ns:.1f}$ ns; $\\chi^2={chi2:.1f}$' if spectra_legend else None)
+        ax.errorbar(df.q, df.I, fmt='-', color=color, label=label)
+        ax_res.errorbar(df.q, df.res, fmt='o-', color=color)
+
+    # def plot_spectra(self, filename=None, path=None,
+    #                  plot=True, get_Rg=False, maxqfit=np.inf,
+    #                  rerun_filename=None, Rg_filter=(0, np.inf),
+    #                  chi2_filter=(0, np.inf), angular_unit='A',
+    #                   every_n=1, max_out=1000, index_list=None,
+    #                  spectra_colors=None,
+    #                  spectra_legend=True,
+    #                  spectra_timeis=[0,200],
+    #                  **kwargs):
+    #     if path is None:
+    #         path = self.mdpath
+    #     if filename is None:
+    #         filename = self.spectra_filename
+    #     outdict = {'time': [],
+    #                'df': [],
+    #                'chi2': [],
+    #                'Rg': [],
+    #                'err_Rg': [],
+    #                'Rchi2': [],
+    #                'I0': [],
+    #                'err_I0': []}
+    #     file = Path(path, filename)
+    #     if filename is None:
+    #         file = self.get_spectra_filename()
+    #     df_data = self.get_data(angular_unit=angular_unit, scale=self.shift)
+    #     # if self.angular_unit == 'A':
+    #     #     if angular_unit == 'nm':
+    #     #         df_data.q = df_data.q*10
+    #     # if self.angular_unit == 'nm':
+    #     #     if angular_unit == 'A':
+    #     #         df_data.q = df_data.q/10
+    #     ax = kwargs.pop('ax') if 'ax' in kwargs else None
+    #     ax_res = kwargs.pop('ax_res') if 'ax_res' in kwargs else None
+    #     if plot:
+    #         if ax is None:
+    #             fig = plt.figure(figsize=(self.plot_standardwidth,self.plot_longheight))
+    #             gs = fig.add_gridspec(2, 1, height_ratios=[3, 1])  # 3:1 ratio
+    #             ax = fig.add_subplot(gs[0])
+    #             ax_res = fig.add_subplot(gs[1], sharex=ax)
+    #         else:
+    #             fig = ax.get_figure()
+    #         if ax_res is None:
+    #             fig_res, ax_res = plt.subplots()
+    #         ax_res.plot([df_data.q.min(), df_data.q.max()], [0,0])
+    #         ax = self.plot_data(ax=ax, label=f'{self.name} data', marker='o', linestyle='',
+    #                             scale=self.shift,
+    #                             unit=angular_unit, **kwargs)
+    #     out = self.get_waxs_spectra(file, every_n=every_n, max_out=max_out)
+    #     df_data['I'] = df_data.I
+    #     df_data['err_I'] = df_data.err_I
+    #     dfs = out['dfs'][1::]
+    #     times = out['times'][1::]
+    #     if not rerun_filename is None:
+    #         rerun_out = self.get_waxs_spectra(Path(path, rerun_filename), every_n=every_n, max_out=max_out)
+    #         rerun_dfs = rerun_out['dfs'][1::]
+
+    #     if not index_list is None:
+    #         dfs = [out['dfs'][i] for i in index_list]
+    #         times = [out['times'][i] for i in index_list]
+    #     colori = 0
+    #     for df, time in zip(dfs, times):
+    #         df['fit'] = df.I
+    #         df = df[df.q>0.15]
+    #         if angular_unit == "A":  # Ångström
+    #             df.loc[:, "q"] /= 10
+    #         scale = None
+    #         offset = None
+    #         chi2 = None
+    #         if maxqfit < df.q.max():
+    #             if rerun_filename is None:
+    #                 df_maxqfit = df.copy()
+    #             else:
+    #                 df_maxqfit = ''
+    #             df_maxqfit = df_maxqfit[df_maxqfit.q < maxqfit]
+    #             odict = self.scale_and_offset_fit(df_data, df_maxqfit)
+    #             scale = odict['scale']
+    #             offset = odict['offset']
+    #             chi2 = odict['chi2']
+    #             print('scale', scale, offset)
+    #         odict = self.scale_and_offset_fit(df_data, df, scale=scale, offset=offset)
+    #              # p0=None, scale=None, offset=None, bounds=(-np.inf, np.inf))
+    #         df = odict['df']
+    #         chi2 = odict['chi2'] if chi2 is None else chi2
+    #         if chi2 < chi2_filter[0]:
+    #             continue
+    #         if chi2 > chi2_filter[1]:
+    #             continue
+    #         time_ns = time * 2e-6
+    #         # print(time_ns)
+    #         if get_Rg:
+    #             qmin = max(0.1, self.qmin)
+    #             qmax = max(1, self.qmin+1.0)
+    #             dfr = df.copy()
+    #             if angular_unit == 'A':
+    #                 dfr.q = dfr.q * 10
+    #                 qmin, qmax = 10*qmin, 10*qmax
+    #             Rgdict = SAXS_Measurement.get_rg(self, df=dfr, plot=plot, ax=ax,
+    #                                              qmin=qmin, qmax=qmax)
+    #             # print('rgdict', Rgdict)
+    #             Rg = Rgdict['Rg']
+    #             if Rg < Rg_filter[0]:
+    #                 continue
+    #             if Rg > Rg_filter[1]:
+    #                 continue
+    #             # print('rgdict', Rgdict)
+    #             for key in Rgdict.keys():
+    #                 # print(Rgdict[key])
+    #                 if key == 'chi2':
+    #                     outdict['Rchi2'].append(Rgdict[key])
+    #                 else:
+    #                     outdict[key].append(Rgdict[key])
+    #         outdict['df'].append(df)
+    #         outdict['chi2'].append(chi2)
+    #         outdict['time'].append(time_ns)
+    #         if plot:
+    #             color = None
+    #             if not spectra_colors is None:
+    #                 color = spectra_colors[colori]
+    #             if isinstance(spectra_legend, list):
+    #                 label = spectra_legend[colori]
+    #             elif spectra_legend:
+    #                 label = f'$t = {time_ns:.1f}$ ns; $\\chi^2={chi2:.1f}$'
+    #             else:
+    #                 label = None
+    #             colori += 1
+    #             ax.errorbar(df.q, df.I, fmt='-', color=color,
+    #                         label=label)
+    #             ax_res.errorbar(df.q, df.res, fmt='o-', color=color,
+    #                         label='$\\chi^2={:.1f}$'.format(chi2))
+    #         else:
+    #             ax=None
+
+    #     if plot:
+    #         ax.legend(fontsize='xx-small')
+    #         ax_res.set_xlabel(ax.get_xlabel())
+    #         ax_res.set_ylabel('Residuals')
+    #         # ax_res.legend()
+    #         # ax_res.set_xscale('log')
+    #         outdict['fig'] = fig
+    #         outdict['ax'] = ax
+    #         outdict['ax_res'] = ax_res
+    #     # ax.set_ylim(1e3, 1e7)
+    #     return outdict
 
     def get_Ree(self, selection="nucleic and name P",
                 time_interval=(0, np.inf), step=1):
