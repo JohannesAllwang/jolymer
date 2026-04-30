@@ -144,6 +144,7 @@ class AlignSAXS_WAXS:
         qmax=None,
         minus_df=None,
         n_bins=200,
+        prefix='merge'
     ):
         """
         Merge SAXS and aligned WAXS in the overlap region and
@@ -222,7 +223,7 @@ class AlignSAXS_WAXS:
             minusI = minus_df.I
         for t, m in enumerate(self.ms_saxs.ms):
             path = Path(m.path)
-            filename = f"merge.{m.filename}"
+            filename = f"{prefix}.{m.filename}"
             outdf = pd.DataFrame({
                 "q": q_final,
                 "I": I_final[:, t] - minusI,

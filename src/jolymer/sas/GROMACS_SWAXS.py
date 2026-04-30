@@ -5,6 +5,7 @@ from os.path import join
 from matplotlib.colors import LogNorm
 from pylab import cm
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import pandas as pd
 
 import shutil
@@ -120,7 +121,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
             for line in f:
                 if len(line.split('legend')) > 1:
                     qeqq = line.split('legend')[1]
-                    q = float(line.split('=')[1].replace('"', ''))
+                    q = float(line.split('=')[1].replace('"', '')) / 10
                     qs.append(q)
                     outdict[q] = []
                 elif len(line.split()) > 3 and not line[0] in ['#', '@']:
@@ -129,6 +130,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
                     for number, q in zip(numbers, qs):
                         outdict[q].append(number)
         df = pd.DataFrame(outdict)
+        # df.q = df.q/10
         df.time = df.time / 1000
         return df
 
@@ -240,6 +242,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         from MDAnalysis.analysis import align
         npt_path = Path(self.mdpath, self.npt_filename)
         xtc_path = Path(self.mdpath, self.xtc_filename)
+        print('loading', xtc_path)
         u = mda.Universe(npt_path, xtc_path)
         nucleic = u.select_atoms("nucleic")
         workflow = [wrap(u.atoms, compound='residues')]
@@ -372,8 +375,10 @@ class GROMACS_SWAXS(SAXS_Measurement):
         })
         return rmsd_df
 
-    def plot_rg_chi2(self, ax=None, medoid_times=None):
-        rgref = SAXS_Measurement.get_rg(self, df=self.get_data(), qmin=0.2, qmax=1.0)['Rg']
+    def plot_rg_chi2(self, ax=None, medoid_times=None, gyrate=True):
+        color_chi2 = jocolors.tstum1
+        color_rg = jocolors.tstum7
+        rgref = SAXS_Measurement.get_rg(self, df=self.get_data(), qmin=0.3, qmax=0.8)['Rg']
         print('rgref', rgref)
         dfrg = self.get_rg()
         print('rg_filename', self.rg_filename)
@@ -386,16 +391,17 @@ class GROMACS_SWAXS(SAXS_Measurement):
             fig = ax.get_figure()
 
         axR = ax.twinx()
-        ax.plot(df.time, df.chi2, color=jocolors.tstum0)
-        axR.plot(df.time, df.Rg, color=jocolors.tstum3, label='GROMACS-SWAXS')
-        axR.plot([df.time[0], df.time.max()], [rgref, rgref], color=jocolors.tstum2,
+        ax.plot(df.time, df.chi2, color=color_chi2)
+        axR.plot(df.time, df.Rg, color=jocolors.tstum7, label='GROMACS-SWAXS')
+        axR.plot([df.time[0], df.time.max()], [rgref, rgref], color=color_rg,
                 linestyle='--', label='Guinier Experiment')
-        axR.plot(dfrg.time, dfrg.Rg, color=jocolors.tstum4,
-                linestyle='-', marker='', label='gmx gyrate',
-                alpha=0.5)
+        if gyrate:
+            axR.plot(dfrg.time, dfrg.Rg, color=color_rg,
+                    linestyle='-', marker='', label='gmx gyrate',
+                    alpha=0.5)
         ax.set_xlabel('time [ns]')
-        ax.set_ylabel('$\\chi^2$', color=jocolors.tstum0)
-        axR.set_ylabel('$R_G$ [nm]', color=jocolors.tstum3)
+        ax.set_ylabel('$\\chi^2$', color=color_chi2)
+        axR.set_ylabel('$R_G$ [nm]', color=color_rg)
         # axR.legend()
         m1color = jocolors.tstum1
         m2color = jocolors.tstum5
@@ -417,12 +423,16 @@ class GROMACS_SWAXS(SAXS_Measurement):
             figsize = kwargs.pop('figsize')
         df = self.get_swaxspot(**kwargs)
         from mpl_toolkits.mplot3d import Axes3D  # not strictly necessary, but keeps IDEs happy
-        T, Q = np.meshgrid(df.time, df.columns[1:].astype(float), indexing="ij")  # shape: (n_timepoints, n_qvalues)
+        q_vals = df.columns[1:].astype(float)
+        time_vals = df.time
+        Z = df.iloc[:, 1:].values
+        T, Q = np.meshgrid(time_vals, q_vals, indexing="ij")
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot(111, projection='3d')
-        surf = ax.plot_surface(T, Q, df.iloc[:, 1:].values, cmap=cmap)
+        surf = ax.plot_surface(T, Q, Z, cmap=cmap)
+        ax.invert_yaxis()
         ax.set_xlabel("Time [ns]")
-        ax.set_ylabel("$q$ [nm$^{-1}$]")
+        ax.set_ylabel("$q$ [Å$^{-1}$]")
         ax.set_zlabel("$E_{saxs}$ [kJ/mol]")
         return ax
 
@@ -518,11 +528,13 @@ class GROMACS_SWAXS(SAXS_Measurement):
                      Rg_filter=(0, np.inf), chi2_filter=(0, np.inf),
                      angular_unit='A', every_n=1, max_out=1000, index_list=None,
                      spectra_colors=None, spectra_legend=True,
+                     inset=False, inset_xlim=None, inset_ylim=None,
                      spectra_timeis=[0,200], q_cutoff=0.15, **kwargs):
         path = self.mdpath if path is None else path
         filename = self.spectra_filename if filename is None else filename
         file = Path(path, filename) if filename is not None else self.get_spectra_filename()
-        outdict = {'time': [], 'df': [], 'chi2': [], 'Rg': [], 'err_Rg': [], 'Rchi2': [], 'I0': [], 'err_I0': []}
+        outdict = {'time': [], 'df': [], 'chi2': [], 'Rg': [],
+                   'err_Rg': [], 'Rchi2': [], 'I0': [], 'err_I0': []}
         df_data = self.get_data(angular_unit=angular_unit, scale=self.shift)
         ax = kwargs.pop('ax') if 'ax' in kwargs else None
         ax_res = kwargs.pop('ax_res') if 'ax_res' in kwargs else None
@@ -534,12 +546,21 @@ class GROMACS_SWAXS(SAXS_Measurement):
                 ax_res = fig.add_subplot(gs[1], sharex=ax)
             else:
                 fig = ax.get_figure()
+            ax_inset = None
+            if inset:
+                ax_inset = inset_axes(ax, width="50%", height="50%", loc="upper right")
+                ax_inset.set_xscale('log')
+                ax_inset.set_yscale('log')
+                ax_inset.tick_params(axis='both', which='both', direction='in',
+                                     pad=2.0)
+                ax_inset = self.plot_data(ax=ax_inset, label=f'{self.name} data', marker='o', linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
             if ax_res is None:
                 _, ax_res = plt.subplots()
-            ax_res.plot([df_data.q.min(), df_data.q.max()], [0, 0])
+            ax_res.plot([df_data.q[df_data.q<maxqfit].min(), df_data[df_data.q<maxqfit].q.max()], [0, 0])
             ax = self.plot_data(ax=ax, label=f'{self.name} data', marker='o', linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
         out = self.get_waxs_spectra(file, every_n=every_n, max_out=max_out)
         dfs, times = out['dfs'][1::], out['times'][1::]
+        print('il', index_list)
         if index_list is not None:
             dfs = [dfs[i] for i in index_list]
             times = [times[i] for i in index_list]
@@ -559,11 +580,17 @@ class GROMACS_SWAXS(SAXS_Measurement):
             outdict['chi2'].append(chi2)
             outdict['time'].append(time_ns)
             if plot:
-                self._plot_single(ax, ax_res, df, chi2, time_ns, i, spectra_colors, spectra_legend)
+                # self._plot_single(ax, ax_res, df, chi2, time_ns, i, spectra_colors, spectra_legend)
+                self._plot_single(ax, ax_res, df, chi2, time_ns, i, spectra_colors, spectra_legend,
+                                  maxqfit=maxqfit, ax_inset=ax_inset)
         if plot:
-            ax.legend(fontsize='xx-small')
+            ax.legend(fontsize='x-small')
             ax_res.set_xlabel(ax.get_xlabel())
             ax_res.set_ylabel('Residuals')
+            # if inset:
+                # ax_inset.set_xticks([])
+                # ax_inset.set_yticks([])
+            outdict['ax_inset'] = ax_inset
             outdict['fig'], outdict['ax'], outdict['ax_res'] = fig, ax, ax_res
         return outdict
 
@@ -587,17 +614,18 @@ class GROMACS_SWAXS(SAXS_Measurement):
 
 
     def _compute_rg(self, df, angular_unit='A', plot=False, ax=None):
-        qmin, qmax = max(0.1, self.qmin), max(1, self.qmin + 1.0)
+        qmin, qmax = max(0.01, self.qmin), max(0.04, self.qmin + 0.6)
         dfr = df.copy()
         if angular_unit == 'A': dfr.q *= 10; qmin, qmax = 10*qmin, 10*qmax
         return SAXS_Measurement.get_rg(self, df=dfr, plot=plot, ax=ax, qmin=qmin, qmax=qmax)
 
 
-    def _plot_single(self, ax, ax_res, df, chi2, time_ns, i, spectra_colors, spectra_legend):
+    def _plot_single(self, ax, ax_res, df, chi2, time_ns, i, spectra_colors, spectra_legend, maxqfit=np.inf, ax_inset=None):
         color = spectra_colors[i] if spectra_colors is not None else None
         label = spectra_legend[i] if isinstance(spectra_legend, list) else (f'$t = {time_ns:.1f}$ ns; $\\chi^2={chi2:.1f}$' if spectra_legend else None)
         ax.errorbar(df.q, df.I, fmt='-', color=color, label=label)
-        ax_res.errorbar(df.q, df.res, fmt='o-', color=color)
+        ax_res.errorbar(df[df.q<maxqfit].q, df[df.q<maxqfit].res, fmt='o-', color=color)
+        if ax_inset is not None: ax_inset.errorbar(df.q, df.I, fmt='-', color=color, label=label)
 
     # def plot_spectra(self, filename=None, path=None,
     #                  plot=True, get_Rg=False, maxqfit=np.inf,
@@ -882,7 +910,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
                                     every_n=1, index_list=pick_chi2,
                                     ax=ax, ax_res=ax_res,
                                     spectra_legend=spectra_legend,
-                                    spectra_colors=[jocolors.tstum0,
+                                    spectra_colors=[jocolors.tstum22,
                                                     jocolors.tstum8])
         if not average:
             return outdict
@@ -893,7 +921,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         average_df = average_dict['df'][0]
         average_chi2 = average_dict['chi2'][0]
         ax.errorbar(average_df.q, average_df.I, label=f'average; $\\chi^2={average_chi2:.1f}$',
-                marker='', linestyle='-', color=jocolors.tstum16)
+                marker='', linestyle='-', color=jocolors.tstum23)
         ax.legend()
         ax_res.legend('')
         plt.tight_layout()
