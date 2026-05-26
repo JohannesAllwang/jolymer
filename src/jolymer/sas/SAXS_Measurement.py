@@ -432,6 +432,7 @@ class SAXS_Measurement(Measurement):
             df_scale_out.err_I = scale * df_scale_out.err_I
         df_scale_out['res'] = (df_ref_out['I'] - df_scale_out['I']) / df_ref_out.err_I
         outdict['df'] = df_scale_out
+        outdict['df_ref'] = df_ref_out
         outdict['chi2'] = self.get_chi2(df_ref_out, df_scale_out)[1]
         outdict['scale'] = scale
         outdict['offset'] = offset
