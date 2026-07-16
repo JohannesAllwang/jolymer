@@ -3,10 +3,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 from ..Measurement import Measurement
 from .. import os_utility as osu
-from ..samples.bioMOLECULE import bioMOLECULE, ac6
+from ..samples.bioMOLECULE import bioMOLECULE, load_ac6
+from ..import plot_utility as plu
+
+ac6 = load_ac6()
 
 
 @dataclass
@@ -72,7 +76,7 @@ class onlineUV(Measurement):
 
     # --------------------------------------------------------
     def get_scaled_Abs(self, refwl=None, outwl=None, alignment_time=None,
-                       show=False):
+                       show=False, show_wl=[]):
         """
         Return scaled Abs vs time for two wavelengths.
         refwl: reference wl (typically 260 nm)
@@ -125,6 +129,11 @@ class onlineUV(Measurement):
                 ddf["Abs"] = ddf["Abs"] * factor
                 outdict["scaled_outs"].append(ddf)
                 outdict["scale_factors"].append(factor)
+            show_wl_dfs = []
+            for wl in show_wl:
+                if np.isclose(wl, refwl, atol=0.5):
+                    show_wl_dfs.append(ddf)
+
         Abs_stack = np.vstack([ddf.Abs.values for ddf in outdict["scaled_outs"]])
         outdict["scaled_out"] = pd.DataFrame({
             "time": outdict["scaled_outs"][0].time.values,
@@ -144,6 +153,92 @@ class onlineUV(Measurement):
 
         return outdict["scaled_out"]
         # return pd.DataFrame(outdict)
+
+    def plot_full_wavelength_map(self,
+                              wl_min=210,
+                              wl_max=900,
+                              refwl=None,
+                                 ax=None,
+                              alignment_time=None,
+                              cmap="plasma",
+                              show=True):
+        """
+        Plot full wavelength-resolved absorbance map (time vs wavelength).
+        Uses reference wavelength scaling similar to get_scaled_Abs.
+        """
+        if refwl is None:
+            refwl = self.refwl
+        if alignment_time is None:
+            alignment_time = self.alignment_time
+        df = self.load_data().T
+        wavelengths = []
+        absorbance_matrix = []
+        time_axis = None
+        ref_trace = None
+        ref_idx = None
+        # --- collect data ---
+        for i in range(20, 151):
+            wl = int(df.iat[0, i])
+            if wl < wl_min or wl > wl_max:
+                continue
+            Abs = df[i][1:].astype(float).values
+            time = np.linspace(0, len(Abs), len(Abs)) * 0.946
+            # store reference
+            if np.isclose(wl, refwl, atol=0.5):
+                ref_trace = Abs.copy()
+                ref_time = time.copy()
+                ref_idx = np.argmin(np.abs(ref_time - alignment_time))
+            wavelengths.append(wl)
+            absorbance_matrix.append(Abs)
+            if time_axis is None:
+                time_axis = time
+        wavelengths = np.array(wavelengths)
+        absorbance_matrix = np.array(absorbance_matrix)
+        # --- scaling using reference wavelength ---
+        if ref_trace is None:
+            raise ValueError("Reference wavelength not found.")
+        ref_value = ref_trace[ref_idx]
+        scaled_matrix = np.zeros_like(absorbance_matrix)
+        for j in range(len(wavelengths)):
+            wl_trace = absorbance_matrix[j]
+            factor = ref_value / (wl_trace[ref_idx] + 1e-12)
+            scaled_matrix[j] = wl_trace * factor
+        # --- plot ---
+        if show:
+            if ax is None:
+                fig, ax = plt.subplots(figsize=(4,2))
+            else:
+                ax=ax
+                fig = ax.get_figure()
+            extent = [
+                time_axis[0],
+                time_axis[-1],
+                wavelengths.min(),
+                wavelengths.max()
+            ]
+            # sort by wavelength for nicer gradient
+            sort_idx = np.argsort(wavelengths)
+            wavelengths_sorted = wavelengths[sort_idx]
+            matrix_sorted = scaled_matrix[sort_idx]
+            # colors = plu.cm_for_l('plasma', wavelengths)
+            norm = plt.Normalize(wl_min, wl_max)
+            comap = cm.get_cmap(cmap)
+            for wl, absorbance in zip(wavelengths_sorted, matrix_sorted):
+                color = comap(norm(wl))
+                ax.plot(time_axis, absorbance, color=color)
+            ax.set_xlabel("Time [s]")
+            ax.set_ylabel("Abs [A.U.]")
+            # cbar = plt.colorbar(im, ax=ax)
+            # cbar.set_label("Scaled Absorbance")
+            sm = cm.ScalarMappable(norm=norm, cmap=comap)
+            sm.set_array([])
+            cbar = plt.colorbar(sm, ax=ax)
+            cbar.set_label("Wavelength (nm)")
+        return {
+            "time": time_axis,
+            "wavelengths": wavelengths,
+            "abs_matrix": scaled_matrix
+        }
 
     def to_concentration(self, biomolecule, wl, pathlength_cm=1.0):
         """

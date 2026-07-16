@@ -79,34 +79,52 @@ class bioMOLECULE:
         return dna_effective_volume
 
     def get_MW(self):
-        pdb = md.load_pdb(f"pymol/{self.name}.pdb")
+        if self.Mw is not None:
+            print("Mw already loaded")
+            return self.Mw
+        pdb = md.load(self.pdb_path)
         mw = sum(atom.element.mass for atom in pdb.topology.atoms)
+        self.Mw = mw
+        return mw
 
-        print(csample.name, f"Molecular weight: {mw:.3f} Da")
-        MW = mw
-        return MW
-        # formula = pt.formula(f"dna: {self.sequence}")
-        # return formula.molecular_mass
-
-    def get_density(self, **kwargs):
-        """
-        get volume is in A^3, mass is in g/mol
-        return is in g/cm^3.0
-        """
-        volume = self.get_volume(**kwargs) * 1e-24
-        volume = self.volume
-        formula = pt.formula(f"dna: {self.sequence}")
-        mass = formula.molecular_mass
-        print('vm', volume, mass)
-        density = mass / volume
+    def get_density(self):
+        MW = self.get_MW()
+        density = MW / (self.volume * constants.Avogadro)
         return density
+    # def get_density(self, **kwargs):
+    #     """
+    #     get volume is in A^3, mass is in g/mol
+    #     return is in g/cm^3.0
+    #     """
+    #     volume = self.get_volume(**kwargs) * 1e-24
+    #     volume = self.volume
+    #     formula = pt.formula(f"dna: {self.sequence}")
+    #     mass = formula.molecular_mass
+    #     print('vm', volume, mass)
+    #     density = mass / volume
+    #     return density
 
-    def get_SLD(self, wl=1.23, **kwargs):
-        f = pt.formula(f'{DorP}: {self.sequence}')
-        f.density = self.get_density(**kwargs)
+    def get_SLD(self, wl=1.24):
+        f = pt.formula(f"{self.DorP}: {self.sequence}")
+        f.density = self.get_density()
         sld, _ = pt.xsf.xray_sld(f, wavelength=wl)
-        return sld*1e-6
-
+        return sld * 1e-6
+    def get_delta_rho(self, wl=1.24):
+        return (self.get_SLD(wl=wl) - self.solvent_SLD)
+    def get_I0_prefactor(self, wl=1.24):
+        MW = self.get_MW()
+        V = self.volume
+        Drho = self.get_delta_rho(wl=wl) * 1e16
+        NA = constants.Avogadro
+        prefactor = (Drho**2 * V**2 * NA) / (1000 * MW)
+        return prefactor
+    def c_from_I0(self, I0, wl=1.24):
+        return I0 / self.get_I0_prefactor(wl=wl)
+    def I0_from_c(self, c, wl=1.24):
+        return c * self.get_I0_prefactor(wl=wl)
+    def c_from_UV(self, A):
+        MW = self.get_MW()
+        return A * MW / self.epsilon
 
 
 class DNA(bioMOLECULE):
@@ -212,54 +230,77 @@ class PROTEIN(bioMOLECULE):
     dna: bool = False
     pdb_path: str = 'None'
     traj_path: str = 'None'
+    vbar: float = 0.733 # cm^3/g
+
+    def estimate_volume_from_vbar(self):
+        MW = self.get_MW()
+        self.volume = MW * self.vbar / constants.Avogadro
+        return self.volume
 
 
+from importlib.resources import files
+DATA = files("data")
 
+def load_bsa():
+    bsa = PROTEIN(name="BSA",
+                  pdb_path=str(DATA / "bsa.gro"),
+                  traj_path=str(DATA / "bsa.xtc"),
+                  epsilon=43824,
+                  Mw=66430,
+                  vbar=0.733, )
+    bsa.estimate_volume_from_vbar()
+    return bsa
 
 
 # https://molbiotools.com/dnacalculator.php
 
-ac6 = DNA(name='AC6',
-          pdb_path='/home/johannes/gromacs_xps/odna_2025/ac6/md_short.gro',
-          traj_path='/home/johannes/gromacs_xps/odna_2025/ac6/md_short.xtc',
-        sequence='ACACACACACAC',
-        SLD=1.31e-05)
-ac6.SLD17 = 1.5e-05
-ac6.epsilon_molbio = 119200
-ac6.volume = 2.81345e-21
-ac6.volume = 2.41345e-21
-ac6.volume = 2.9e-21 * 0.8
-ac6.epsilon = 13254 * 1.0
-gt6 = DNA(name='GT6', SLD=1.26e-05,
-          pdb_path='/home/johannes/gromacs_xps/odna_2025/gt6/npt.gro',
-          traj_path='/home/johannes/gromacs_xps/odna_2025/gt6/md_short.xtc',
-        sequence='GTGTGTGTGTGT')
-gt6.epsilon_molbio = 114000
-gt6.SLD17 = 1.5e-05
-gt6.volume = 2.99177e-21
-gt6.volume = 3.99177e-21
-gt6.volume = 3.0e-21 * 1.2
-gt6.epsilon = 12384 * 1.4
-ac6gt6 = DNA(name='AC6GT6', SLD=1.66e-05,
-          pdb_path='/home/johannes/gromacs_xps/odna_2025/ac6gt6/npt.gro',
-          traj_path='/home/johannes/gromacs_xps/odna_2025/ac6gt6/md_short.xtc',
-        sequence='ACACACACACACGTGTGTGTGTGT',
-        dna=True)
-ac6gt6.epsilon_molbio = 199048 * 0.6
-ac6gt6.SLD17 = 1.5e-05
-ac6gt6.volume = 5.83022e-21
-ac6gt6.volume = 7.33022e-21
-ac6gt6.volume = 6.0e-21 * 1.2
-ac6gt6.epsilon = 21202 * 1.0
+def load_ac6():
+    ac6 = DNA(name='AC6',
+              pdb_path=str(DATA / "ac6.gro"),
+              traj_path=str(DATA / "ac6.gro"),
+            sequence='ACACACACACAC',
+            SLD=1.31e-05)
+    ac6.SLD17 = 1.5e-05
+    ac6.epsilon_molbio = 119200
+    ac6.volume = 2.81345e-21
+    ac6.volume = 2.41345e-21
+    ac6.volume = 2.9e-21 * 0.8
+    ac6.epsilon = 13254 * 1.0
+    return ac6
+def load_gt6():
+    gt6 = DNA(name='GT6', SLD=1.26e-05,
+              pdb_path=str(DATA / "gt6.gro"),
+              traj_path=str(DATA / "gt6.gro"),
+            sequence='GTGTGTGTGTGT')
+    gt6.epsilon_molbio = 114000
+    gt6.SLD17 = 1.5e-05
+    gt6.volume = 2.99177e-21
+    gt6.volume = 3.99177e-21
+    gt6.volume = 3.0e-21 * 1.2
+    gt6.epsilon = 12384 * 1.4
+    return gt6
+def load_ac6gt6():
+    ac6gt6 = DNA(name='AC6GT6', SLD=1.66e-05,
+              pdb_path=str(DATA / "ac6gt6.gro"),
+              traj_path=str(DATA / "ac6gt6.gro"),
+            sequence='ACACACACACACGTGTGTGTGTGT',
+            dna=True)
+    ac6gt6.epsilon_molbio = 199048 * 0.6
+    ac6gt6.SLD17 = 1.5e-05
+    ac6gt6.volume = 5.83022e-21
+    ac6gt6.volume = 7.33022e-21
+    ac6gt6.volume = 6.0e-21 * 1.2
+    ac6gt6.epsilon = 21202 * 1.0
+    return ac6gt6
 h2o = {'sld': 9.47e-06}
-csamples = [ac6, gt6, ac6gt6]
+# csamples = [ac6, gt6, ac6gt6]
 
-for csample in csamples:
-    pdb = md.load_pdb(f"/home/johannes/jophd/reports/odna/pymol/{csample.name}.pdb")
-    mw = sum(atom.element.mass for atom in pdb.topology.atoms)
+# for csample in csamples:
+#     pdb = md.load_pdb(f"/home/johannes/jophd/reports/odna/pymol/{csample.name}.pdb")
+#     mw = sum(atom.element.mass for atom in pdb.topology.atoms)
 
-    print(csample.name, f"Molecular weight: {mw:.3f} Da")
-    csample.Mw = mw
+#     print(csample.name, f"Molecular weight: {mw:.3f} Da")
+#     csample.Mw = mw
 
 # 	This work	l/mmol/cm			Previous https://academic.oup.com/nar/article/32/1/e13/1195443
 

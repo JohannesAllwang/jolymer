@@ -295,7 +295,7 @@ class SAXS_Measurement(Measurement):
 
         markers, caps, bars = ax.errorbar(df.q, (df.I+linear_shift)*scale, df.err_I*scale,
                                           marker=marker, linestyle=linestyle,
-                                          label=label, elinewidth=0.2,  **kwargs)
+                                          label=label, elinewidth=1.0,  **kwargs)
         # [bar.set_alpha(0.2) for bar in bars]
 
         ax.set_xlabel(f'q [{str_unit}]')
@@ -338,7 +338,7 @@ class SAXS_Measurement(Measurement):
 
         markers, caps, bars = ax.errorbar(df.q, df.I*df.q*df.q*scale, df.err_I*df.q*df.q*scale,
                                           marker=marker, linestyle=linestyle,
-                                          label=label, elinewidth=0.2,  **kwargs)
+                                          label=label, elinewidth=1.0,  **kwargs)
         # [bar.set_alpha(0.2) for bar in bars]
 
         ax.set_xlabel(f'q [{self.str_angular_unit}]')
@@ -395,6 +395,38 @@ class SAXS_Measurement(Measurement):
             os.remove(tmp_path)
         return data
 
+
+    @staticmethod
+    def load_autorg(path, dt=2.1):
+        import re
+        rows = []
+        pattern = re.compile(r"(\d+)\.dat")
+        with open(path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("Rg"):
+                    continue
+                parts = line.split()
+                rg = float(parts[0])
+                stdev = parts[1]
+                i0 = float(parts[2])
+                guinier = " ".join(parts[3:8])
+                quality = parts[8] if len(parts) > 8 else None
+                file = parts[-1]
+                m = pattern.search(file)
+                x = int(m.group(1)) if m else None
+                rows.append({
+                    "x": x,
+                    "time": x * dt if x is not None else None,
+                    "Rg": rg,
+                    "stdev": stdev,
+                    "I0": i0,
+                    "file": file
+                })
+        df = pd.DataFrame(rows)
+        df = df.sort_values("x").reset_index(drop=True)
+        return df
+
     def scale_and_offset_fit(self, df_ref, df_scale, p0=None,
                              scale=None, offset=None,
                              bounds=(-np.inf, np.inf), weight_data=True):
@@ -407,11 +439,11 @@ class SAXS_Measurement(Measurement):
         # Interpolate y_original onto the x-values of y_intact
         df_ref_out = df_ref[df_ref.q < np.max(df_scale.q)]
         df_ref_out = df_ref_out[df_ref_out.q > np.min(df_scale.q)]
-        f = interp1d(df_scale.q, df_scale.I, kind='linear')
+        f = interp1d(df_scale.q, df_scale.I, kind='cubic')
         df_scale_out = pd.DataFrame({'q': df_ref_out.q,
                                      'I': f(df_ref_out.q)})
         if 'err_I' in df_scale.keys():
-            err_f = interp1d(df_scale.q, df_scale.err_I, kind='linear')
+            err_f = interp1d(df_scale.q, df_scale.err_I, kind='cubic')
             df_scale_out = pd.DataFrame({'q': df_ref_out.q,
                                          'I': f(df_ref_out.q),
                                          'err_I': err_f(df_ref_out.q)})

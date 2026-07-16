@@ -10,6 +10,7 @@ import pandas as pd
 
 import shutil
 import os
+from tqdm.auto import tqdm
 
 import sasmodels
 from sasmodels import data as sasmodels_data
@@ -50,7 +51,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
     gromacs_path: str='not defined'
     maxq: float=np.inf
     color: str=None
-    marker: str=''
+    marker: str='o'
     linestyle: str='-'
     mdpath: str=None
     md_basename: str=None
@@ -70,6 +71,8 @@ class GROMACS_SWAXS(SAXS_Measurement):
     plot_standardheight: float=3.25
     plot_shortheight: float=2
     plot_longheight: float=4
+
+    min_index: int=0
 
     def __post_init__(self):
         if self.spectra_filename is None:
@@ -211,9 +214,62 @@ class GROMACS_SWAXS(SAXS_Measurement):
         outdf = pd.DataFrame(out)
         return outdf
 
-    # def get_spectra():
-    #     file = self.get_spectra_filename()
-    #     out = m.get_waxs_spectra(file, every_n=every_n, max_out=max_out)
+    def get_NinR(
+            self,
+            selection="resname SOL",
+            reference="name P",
+            reference_index=5,
+            R=30.0,
+            step=1,
+            center="atom",
+        ):
+            """
+            Parameters
+            ----------
+            selection : str
+            reference : str
+                Atom selection defining the reference.
+            reference_index : int
+                Which atom to use if multiple atoms match.
+            R : float
+                Radius in Å.
+            step : int
+                Trajectory stride.
+            center : {"atom", "com"}
+                Use either a single atom or the center of mass as reference.
+            Returns
+            -------
+            DataFrame
+                time (ns), NinR
+            """
+            u = self.get_u()
+            particles = u.select_atoms(selection)
+            ref_atoms = u.select_atoms(reference)
+            if center == "atom":
+                ref = ref_atoms[reference_index]
+            elif center == "com":
+                ref = ref_atoms
+            else:
+                raise ValueError(...)
+            times = []
+            counts = []
+            for ts in tqdm(u.trajectory[::step], desc="Counting waters"):
+                if center == "atom":
+                    ref_pos = ref.position
+                else:
+                    ref_pos = ref.center_of_mass()
+                r = np.linalg.norm(
+                    particles.positions - ref_pos,
+                    axis=1,
+                )
+                counts.append(np.count_nonzero(r < R))
+                times.append(ts.time / 1000)
+            return pd.DataFrame(
+                {
+                    "time": times,
+                    "N": counts,
+                }
+            )
 
     ## Plot ##
 
@@ -375,6 +431,71 @@ class GROMACS_SWAXS(SAXS_Measurement):
         })
         return rmsd_df
 
+    def _plot_bestfit_rg_segments(self, df, dfrg, medoid_times,
+                                  window=2.0, ax=None):
+        """
+        Plot Rg traces from the best-fit intervals on a continuous
+        artificial x-axis.
+        Parameters
+        ----------
+        window : float
+            Number of ns before each medoid to include.
+        """
+        if ax is None:
+            fig, ax = plt.subplots()
+        else:
+            fig = ax.get_figure()
+        xoffset = 0.0
+        for medoid_time, color in zip(
+                medoid_times,
+                [jocolors.tstum1,
+                 jocolors.tstum5,
+                 jocolors.tstum3,
+                 jocolors.tstum7]):
+            mask_swaxs = (
+                (df.time >= medoid_time - window) &
+                (df.time <= medoid_time)
+            )
+            seg_swaxs = df.loc[mask_swaxs].copy()
+            if len(seg_swaxs) == 0:
+                continue
+            x_swaxs = (
+                seg_swaxs.time -
+                seg_swaxs.time.iloc[0] +
+                xoffset
+            )
+            ax.plot(
+                x_swaxs,
+                seg_swaxs.Rg,
+                color=color,
+                lw=2,
+                label=f'{medoid_time:.1f} ns'
+            )
+            mask_gyrate = (
+                (dfrg.time >= medoid_time - window) &
+                (dfrg.time <= medoid_time)
+            )
+            seg_gyrate = dfrg.loc[mask_gyrate].copy()
+            if len(seg_gyrate):
+                x_gyrate = (
+                    seg_gyrate.time -
+                    seg_gyrate.time.iloc[0] +
+                    xoffset
+                )
+                ax.plot(
+                    x_gyrate,
+                    seg_gyrate.Rg,
+                    color=color,
+                    ls='--',
+                    alpha=0.7
+                )
+            xoffset += window
+        ax.set_ylabel(r'$R_G$ [nm]')
+        ax.set_xticks([])
+        ax.set_xlabel('')
+        ax.legend(title='Best-fit intervals')
+        return ax
+
     def plot_rg_chi2(self, ax=None, medoid_times=None, gyrate=True):
         color_chi2 = jocolors.tstum1
         color_rg = jocolors.tstum7
@@ -414,7 +535,48 @@ class GROMACS_SWAXS(SAXS_Measurement):
 
         for medoid_time, color in zip(medoid_times, medoid_colors):
             ax.axvspan(medoid_time-0.5, medoid_time, facecolor=color, alpha=0.7)  # adjust alpha for transparency
-        return ax, axR
+            mask_swaxs = (df.time >= medoid_time - 2) & (df.time <= medoid_time)
+            mask_gyrate = (dfrg.time >= medoid_time - 2) & (dfrg.time <= medoid_time)
+
+            mean_swaxs = df.loc[mask_swaxs, 'Rg'].mean()
+            mean_chi2 = df.loc[mask_swaxs, 'chi2'].mean()
+            std_swaxs  = df.loc[mask_swaxs, 'Rg'].std()
+
+            mean_gyrate = dfrg.loc[mask_gyrate, 'Rg'].mean()
+            std_gyrate  = dfrg.loc[mask_gyrate, 'Rg'].std()
+
+            print(
+                f"Medoid @ {medoid_time:.2f} ns:\n"
+                f"Chi2 @ {mean_chi2:.2f}:\n"
+                f"  GROMACS-SWAXS: {mean_swaxs:.3f} ± {std_swaxs:.3f} nm\n"
+                f"  gmx gyrate:    {mean_gyrate:.3f} ± {std_gyrate:.3f} nm"
+            )
+        mask_swaxs = (df.time >= 50) & (df.time <= 63)
+        mask_gyrate = (dfrg.time >= 50) & (dfrg.time <= 63)
+        mean_swaxs = df.loc[mask_swaxs, 'Rg'].mean()
+        std_swaxs  = df.loc[mask_swaxs, 'Rg'].std()
+        mean_gyrate = dfrg.loc[mask_gyrate, 'Rg'].mean()
+        std_gyrate  = dfrg.loc[mask_gyrate, 'Rg'].std()
+
+        print(
+            "\n25–50 ns average:\n"
+            f"  GROMACS-SWAXS: {mean_swaxs:.3f} ± {std_swaxs:.3f} nm\n"
+            f"  gmx gyrate:    {mean_gyrate:.3f} ± {std_gyrate:.3f} nm"
+        )
+        fig_best, ax_best = plt.subplots(figsize=(6, 3))
+        self._plot_bestfit_rg_segments(
+            df=df,
+            dfrg=dfrg,
+            medoid_times=medoid_times,
+            window=3.0,  # change to 3.0 if desired
+            ax=ax_best
+        )
+        outdict = {'axchi2': ax,
+                   'axrg': axR,
+                   'fig': ax.get_figure(),
+                   'fig_best': fig_best,
+                   'ax_best': ax_best}
+        return outdict
 
 
     def plot_waxspot3D(self, cmap='viridis', **kwargs):
@@ -553,11 +715,11 @@ class GROMACS_SWAXS(SAXS_Measurement):
                 ax_inset.set_yscale('log')
                 ax_inset.tick_params(axis='both', which='both', direction='in',
                                      pad=2.0)
-                ax_inset = self.plot_data(ax=ax_inset, label=f'{self.name} data', marker='o', linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
+                ax_inset = self.plot_data(ax=ax_inset, label=f'{self.name}', marker='o', linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
             if ax_res is None:
                 _, ax_res = plt.subplots()
             ax_res.plot([df_data.q[df_data.q<maxqfit].min(), df_data[df_data.q<maxqfit].q.max()], [0, 0])
-            ax = self.plot_data(ax=ax, label=f'{self.name} data', marker='o', linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
+            ax = self.plot_data(ax=ax, label=f'{self.name}', marker=self.marker, linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
         out = self.get_waxs_spectra(file, every_n=every_n, max_out=max_out)
         dfs, times = out['dfs'][1::], out['times'][1::]
         print('il', index_list)
@@ -624,7 +786,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         color = spectra_colors[i] if spectra_colors is not None else None
         label = spectra_legend[i] if isinstance(spectra_legend, list) else (f'$t = {time_ns:.1f}$ ns; $\\chi^2={chi2:.1f}$' if spectra_legend else None)
         ax.errorbar(df.q, df.I, fmt='-', color=color, label=label)
-        ax_res.errorbar(df[df.q<maxqfit].q, df[df.q<maxqfit].res, fmt='o-', color=color)
+        ax_res.errorbar(df[df.q<maxqfit].q, df[df.q<maxqfit].res, fmt='-', color=color)
         if ax_inset is not None: ax_inset.errorbar(df.q, df.I, fmt='-', color=color, label=label)
 
     # def plot_spectra(self, filename=None, path=None,
@@ -890,13 +1052,16 @@ class GROMACS_SWAXS(SAXS_Measurement):
         return outdict
 
     def plot_best_worst(self, best_kwargs={}, worst_kwargs={},
-                        worst=False, average=True,
+                        average_kwargs={},
+                        worst=False, average=True, best=True,
                         spectra_legend=False, **kwargs):
         df = self.get_all()
         best_chi2df = self.pick_chi2(df, n=1)
         if worst:
             worst_chi2df = self.pick_chi2(df, n=1, min_time=20, ascending=False)
         pick_chi2 = [-int((-10*t)//6) for t in best_chi2df.time]
+        if not best:
+            pick_chi2 = []
         if worst:
             pick_chi2 +=\
                     [-int((-10*t)//6) for t in worst_chi2df.time]
@@ -906,7 +1071,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
             ax = kwargs.pop('ax')
         if 'ax_res' in kwargs:
             ax_res = kwargs.pop('ax_res')
-        outdict = self.plot_spectra(maxqfit=19.0,
+        outdict = self.plot_spectra(maxqfit=1.7,
                                     every_n=1, index_list=pick_chi2,
                                     ax=ax, ax_res=ax_res,
                                     spectra_legend=spectra_legend,
@@ -920,8 +1085,17 @@ class GROMACS_SWAXS(SAXS_Measurement):
                                            time_interval=(100, 150))
         average_df = average_dict['df'][0]
         average_chi2 = average_dict['chi2'][0]
-        ax.errorbar(average_df.q, average_df.I, label=f'average; $\\chi^2={average_chi2:.1f}$',
-                marker='', linestyle='-', color=jocolors.tstum23)
+        print(average_kwargs)
+        if not 'label' in average_kwargs:
+            avg_label = f'average; $\\chi^2={average_chi2:.1f}$'
+            average_kwargs['label'] = avg_label
+        if not 'color' in average_kwargs:
+            average_kwargs['color'] = jocolors.tstum23
+        if not 'marker' in average_kwargs:
+            average_kwargs['marker'] = ''
+        if not 'linestyle' in average_kwargs:
+            average_kwargs['linestyle'] = '-'
+        ax.errorbar(average_df.q, average_df.I, **average_kwargs)
         ax.legend()
         ax_res.legend('')
         plt.tight_layout()
