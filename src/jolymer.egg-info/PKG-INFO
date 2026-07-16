@@ -1,20 +1,17 @@
 Metadata-Version: 2.4
 Name: jolymer
 Version: 0.0.2
-Summary: Library to assist the handling of experimental data
+Summary: Package for data analysis
 Author: Johannes Allwang
-Author-email: johannes@it-allwang.de
-License: MIT
+Author-email: Johannes Allwang <johannes@it-allwang.de>
+License-Expression: MIT
 Classifier: Programming Language :: Python :: 3
-Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
 License-File: LICENSE
 Dynamic: author
-Dynamic: license
 Dynamic: license-file
-Dynamic: summary
 
 # Johannes Allwang Polymer Analysis
 

@@ -239,7 +239,7 @@ class PROTEIN(bioMOLECULE):
 
 
 from importlib.resources import files
-DATA = files("data")
+DATA = files("jolymer.data")
 
 def load_bsa():
     bsa = PROTEIN(name="BSA",
