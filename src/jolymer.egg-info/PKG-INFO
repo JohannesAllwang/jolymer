@@ -1,16 +1,17 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: jolymer
-Version: 0.0.1
-Summary: My first Python library
+Version: 0.0.2
+Summary: Package for data analysis
 Author: Johannes Allwang
-Author-email: johannes@it-allwang.de
-License: MIT
+Author-email: Johannes Allwang <johannes@it-allwang.de>
+License-Expression: MIT
 Classifier: Programming Language :: Python :: 3
-Classifier: License :: OSI Approved :: MIT License
 Classifier: Operating System :: OS Independent
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
 License-File: LICENSE
+Dynamic: author
+Dynamic: license-file
 
 # Johannes Allwang Polymer Analysis
 
@@ -27,4 +28,8 @@ pip install -e .
 Write documentation.
 (You can see my website johannes-allwang.de for some example uses.)
 
+<<<<<<< HEAD
 - This is the version to use in my pHd
+=======
+- This is the version that I ended my masterthesis on! This is very depricated.
+>>>>>>> phdstart

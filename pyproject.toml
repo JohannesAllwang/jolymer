@@ -1,6 +1,37 @@
 [build-system]
-requires = [
-    "setuptools>=42",
-    "wheel"
-]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "jolymer"
+version = "0.0.2"
+
+authors = [
+    { name = "Johannes Allwang", email = "johannes@it-allwang.de" }
+]
+
+description = "Package for data analysis"
+readme = "README.md"
+requires-python = ">=3.7"
+license = "MIT"
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent"
+]
+
+
+[project.scripts]
+jolymer-regals = "jolymer.gui.regals.app:main"
+jolymer-secplot = "jolymer.gui.sec_plot.app:main"
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+[tool.setuptools.package-data]
+jolymer = [
+    "data/**/*"
+]

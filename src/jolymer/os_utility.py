@@ -20,10 +20,19 @@ config = ConfigParser()
 #     'datapath': '/home/johannes/data'
 #     }
 
-config.read(os.path.expanduser('~/.config/jolymer/jolymer.ini'))
+# config.read(os.path.expanduser('~/.config/jolymer/jolymer.ini'))
 # config.get('measurement_path')
-config_data = config[ 'johannes' ]
-print(config_data.get('measurement_path'))
+# config_data = config[ 'johannes' ]
+# print(config_data.get('measurement_path'))
+logpath = '~/.local/share/jolymer/jolymer.log'
+try:
+    os.mkdir(logpath)
+except OSError:
+    logging.info("Creation of the directory %s failed" % logpath)
+    pass
+else:
+    logging.info("Successfully created the directory %s " % logpath)
+    pass
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
