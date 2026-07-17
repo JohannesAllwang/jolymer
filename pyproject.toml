@@ -24,7 +24,7 @@ classifiers = [
 
 [project.scripts]
 jolymer-regals = "jolymer.gui.regals.app:main"
-jolymer-secplot = "jolymer.gui.standard_sec_plot:main"
+jolymer-secplot = "jolymer.gui.sec_plot.app:main"
 
 
 [tool.setuptools.packages.find]

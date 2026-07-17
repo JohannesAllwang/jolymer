@@ -61,6 +61,7 @@ src/jolymer/gui/regals/views/regals.py
 src/jolymer/gui/regals/views/saxs.py
 src/jolymer/gui/regals/views/uv.py
 src/jolymer/gui/regals/views/waxs.py
+src/jolymer/gui/sec_plot/app.py
 src/jolymer/samples/bioMOLECULE.py
 src/jolymer/sas/CoupledMeasurement.py
 src/jolymer/sas/Debye.py
