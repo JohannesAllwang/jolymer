@@ -1268,95 +1268,59 @@ class FbsAnalysis(Analysis):
     pars: list[str] = field(default_factory=lambda: [
         "time",
         "fbs",
+        "distance_matrices",
     ])
     df_pars: list[str] = field(default_factory=lambda: [
         "gbs"
         ])
     name: str = "BS"
-    selection_groups: str = [f"resid {residid} and not name P O1P OP1 O2P OP2 O5' C5' C4' O4' C3' O3' C2' C1'"
-                             for residid in range(12)]
+    select_group: str = f"not name P O1P OP1 O2P OP2 O5' C5' C4' O4' C3' O3' C2' C1'"
 
     def calc_function(
-            self,
-            solute,
-            bb_atoms,
-            solvent,
-            ions,
-            ts,
-        ):
-        distance_matrices = []
-        inst_hists = []
-        dist_mat = np.full((max_residid, max_residid), np.nan)
-        base_coms = {}
-        # precompute COMs once/frame
-        for residid in range(1, max_residid + 1):
-            g = universe.select_atoms(
-                    self.select_group
-            )
-            base_coms[residid] = g.center_of_mass()
-        for i in range(1, max_residid + 1):
-            for j in range(i + 1, max_residid + 1):
-                # optional skip chain break local neighbor
+        self,
+        solute,
+        bb_atoms,
+        solvent,
+        ions,
+        ts,
+        r_max=10.0,
+        dr=0.1,
+        cutoff=5.0,
+    ):
+        n_res = len(solute.residues)
+        base_coms = np.array([
+            residue.atoms.select_atoms(self.select_group).center_of_mass()
+            for residue in solute.residues
+        ])
+        dist_mat = np.full((n_res, n_res), np.nan)
+        for i in range(n_res):
+            for j in range(i + 1, n_res):
                 if i == 12 and j == 13:
                     continue
                 dist = distance_array(
                     base_coms[i][None, :],
                     base_coms[j][None, :],
-                    box=universe.dimensions
+                    box=ts.dimensions,
                 )[0, 0]
-                dist_mat[i - 1, j - 1] = dist
-                dist_mat[j - 1, i - 1] = dist
-        for residid in range(1, max_residid):
-            if residid == 12:
-                continue
-            dist = dist_mat[residid - 1, residid]
-            hist = np.histogram([dist], bins=r_edges, density=True)[0]
-            inst_hists.append(hist)
-        p_inst = np.mean(inst_hists, axis=0)
-        p_base_store.append(p_inst.tolist())
-        # initialize EMA
-        if pbase_ema is None:
-            pbase_ema = p_inst.copy()
-        else:
-            pbase_ema = alpha * p_inst + (1 - alpha) * pbase_ema
-        # normalize (important!)
-        pbase_ema /= np.sum(pbase_ema) * dr
-        # observables
-        Davg = np.sum(r * pbase_ema) * dr * 0.1
-        Nbb = np.sum(pbase_ema[r < 5.0]) * dr
-        time_ns = timef * dt / 1000
-        Ddict['time'].append(time_ns)
-        Ddict['Davg'].append(Davg)
-        Ddict['Nbb'].append(Nbb)
-        distance_matrices.append(dist_mat.tolist())
-        # Ree (keep your original windowing OR also EMA if desired)
-        Ree_vals = []
-        for ts in traj[timef-20:timef:1]:
-            r0 = bb.positions[0]
-            rN = bb.positions[10]
-            Ree_vals.append(np.linalg.norm(rN - r0))
-
-        Ree_vals = np.asarray(Ree_vals)
-
-        Ree_store['time'].append(time_ns)
-        Ree_store['Ree'].append(Ree_vals.mean())
-        Ree_store['std'].append(Ree_vals.std())
-
+                dist_mat[i, j] = dist
+                dist_mat[j, i] = dist
+        neighbor_dists = np.array([
+            dist_mat[i, i + 1]
+            for i in range(n_res - 1)
+            if i != 12
+        ])
+        r_edges = np.arange(0, r_max + dr, dr)
+        r = 0.5 * (r_edges[:-1] + r_edges[1:])
+        gbs = np.histogram(neighbor_dists, bins=r_edges, density=True)[0]
+        gbs_df = pd.DataFrame({'r': r, 'gbs': gbs})
+        fbs = np.sum(neighbor_dists < cutoff) / len(neighbor_dists)
         results = {
-            'r': r,
-            'p_base': pbase,
-            'D': pd.DataFrame(Ddict),
-            'Ree': pd.DataFrame(Ree_store),
-            'bb_distances': {
-                'time': Ddict['time'],
-                'matrices': distance_matrices
-            },
-            'pbase_time': {
-                'time': Ddict['time'],
-                'pbase': p_base_store,
-            }
+            "time": ts.time,
+            "fbs": fbs,
+            "distance_matrices": dist_mat.tolist(),
         }
-        results.append(outdict)
+        frame_aux = {'gbs': gbs_df}
+        return results, frame_aux
 
 @dataclass
 class RadiusAnalysis(Analysis):
@@ -1366,8 +1330,21 @@ class RadiusAnalysis(Analysis):
         "Rg",
         "Ree",
     ])
-    df_pars: list[str] = field(default_factory=lambda: [
-        "Rg",
-        "Ree"
-        ])
+    df_pars: list[str] = field(default_factory=list)
     name: str = "Radius"
+    selection_solute: str = (
+        "not resname SOL NA CL"
+    )
+
+    def calc_function(self, solute, bb_atoms, solvent, ions, ts):
+        Rg = solute.radius_of_gyration()
+        r0 = bb_atoms.positions[0]
+        rN = bb_atoms.positions[-1]
+        Ree = np.linalg.norm(rN - r0)
+        results = {
+            "time": ts.time,
+            "Rg": Rg,
+            "Ree": Ree,
+        }
+        frame_aux = {}
+        return results, frame_aux
