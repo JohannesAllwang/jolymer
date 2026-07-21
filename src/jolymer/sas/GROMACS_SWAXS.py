@@ -214,6 +214,18 @@ class GROMACS_SWAXS(SAXS_Measurement):
         outdf = pd.DataFrame(out)
         return outdf
 
+    def calc_fbs(self,
+                selection=''):
+        pass
+
+    def calc_rhoR(self,
+                  selection=''):
+        pass
+
+    def calc_Rg(self,
+                selection=''):
+        pass
+
     def get_NinR(
             self,
             selection="resname SOL",
@@ -270,8 +282,6 @@ class GROMACS_SWAXS(SAXS_Measurement):
                     "N": counts,
                 }
             )
-
-    ## Plot ##
 
     @staticmethod
     def pick_chi2(df, n=4, min_dt=5.0, min_time=0, ascending=True):
@@ -333,7 +343,6 @@ class GROMACS_SWAXS(SAXS_Measurement):
         """
         Compute the medoid frame (closest to all others) using a full distance matrix,
         optionally restricted to a selection (e.g., backbone or P atoms).
-
         Parameters
         ----------
         time0, timef : float
@@ -391,7 +400,6 @@ class GROMACS_SWAXS(SAXS_Measurement):
     def rmsd_full_traj_to_medoid(self, medoid_path, selection="nucleic"):
         """
         Compute RMSD of a full trajectory to a given medoid structure.
-
         Parameters
         ----------
         traj_universe : MDAnalysis.Universe
@@ -408,7 +416,6 @@ class GROMACS_SWAXS(SAXS_Measurement):
         dt = traj_universe.trajectory.dt
         print('mpath', medoid_path)
         ref = mda.Universe(medoid_path)  # medoid structure as reference
-
         R = rms.RMSD(
             traj_universe,
             ref,
@@ -422,7 +429,6 @@ class GROMACS_SWAXS(SAXS_Measurement):
         )
         step = 1
         R.run(step=step) #, stop=7500)
-
         rmsd_df = pd.DataFrame({
             "frame": R.rmsd[:,0].astype(int),
             "time": R.rmsd[:,1] / 1000,  # ns
@@ -510,7 +516,6 @@ class GROMACS_SWAXS(SAXS_Measurement):
             fig, ax = plt.subplots()
         else:
             fig = ax.get_figure()
-
         axR = ax.twinx()
         ax.plot(df.time, df.chi2, color=color_chi2)
         axR.plot(df.time, df.Rg, color=jocolors.tstum7, label='GROMACS-SWAXS')
@@ -532,19 +537,15 @@ class GROMACS_SWAXS(SAXS_Measurement):
                          m2color,
                          m3color,
                          m4color]
-
         for medoid_time, color in zip(medoid_times, medoid_colors):
             ax.axvspan(medoid_time-0.5, medoid_time, facecolor=color, alpha=0.7)  # adjust alpha for transparency
             mask_swaxs = (df.time >= medoid_time - 2) & (df.time <= medoid_time)
             mask_gyrate = (dfrg.time >= medoid_time - 2) & (dfrg.time <= medoid_time)
-
             mean_swaxs = df.loc[mask_swaxs, 'Rg'].mean()
             mean_chi2 = df.loc[mask_swaxs, 'chi2'].mean()
             std_swaxs  = df.loc[mask_swaxs, 'Rg'].std()
-
             mean_gyrate = dfrg.loc[mask_gyrate, 'Rg'].mean()
             std_gyrate  = dfrg.loc[mask_gyrate, 'Rg'].std()
-
             print(
                 f"Medoid @ {medoid_time:.2f} ns:\n"
                 f"Chi2 @ {mean_chi2:.2f}:\n"
@@ -557,7 +558,6 @@ class GROMACS_SWAXS(SAXS_Measurement):
         std_swaxs  = df.loc[mask_swaxs, 'Rg'].std()
         mean_gyrate = dfrg.loc[mask_gyrate, 'Rg'].mean()
         std_gyrate  = dfrg.loc[mask_gyrate, 'Rg'].std()
-
         print(
             "\n25–50 ns average:\n"
             f"  GROMACS-SWAXS: {mean_swaxs:.3f} ± {std_swaxs:.3f} nm\n"
@@ -1106,22 +1106,134 @@ class GROMACS_SWAXS(SAXS_Measurement):
         print("Pro tip: use `np.loadtxt` or pandas to visualize later.")
 
 
+from dataclasses import dataclass, field
+import numpy as np
+import pandas as pd
 
-    # @staticmethod
-    # def get_chi2(df, df_fit):
-    #     if len(df) != len(df_fit):
-    #         print('Interpolating since df and df_fit donnot have the same len')
-    #         from scipy.interpolate import interp1d
-    #         df_fit = df_fit[df_fit.q<df.q.max()]
-    #         print(df.q.max(), df_fit.q.max())
-    #         interp_function = interp1d(df.q, df.I)
-    #         df_fit['data'] = interp_function(df_fit.q)
-    #         err_interp_function = interp1d(df.q, df.err_I)
-    #         df_fit['err_data'] = err_interp_function(df_fit.q)
-    #         df_fit = df_fit[df_fit.err_data>0]
-    #     else:
-    #         df_fit['data'] = df.I
-    #         df_fit['err_data'] = df.err_I
-    #     chi2 = np.sum(((df_fit.data - df_fit.fit) / df_fit.err_data)**2 /
-    #                          (len(df_fit) - 1))
-    #     return df_fit, chi2
+
+@dataclass
+class Analysis:
+
+    pars: list[str] = field(default_factory=list)
+    df_pars: list[str] = field(default_factory=list)
+
+    name: str = "Base Class"
+    selection_solute: str = (
+        "not resname SOL NA CL and not name H*"
+    )
+    selection_bb: str = "name P"
+    selection_solvent: str = "resname SOL and not name H*"
+    selection_ions: str = "resname NA CL"
+
+    def run(self, u, *, step=1, **kwargs):
+        solute = u.select_atoms(self.selection_solute)
+        bb_atoms = u.select_atoms(self.selection_bb)
+        solvent = u.select_atoms(self.selection_solvent)
+        ions = u.select_atoms(self.selection_ions)
+        results = []
+        aux_results = {
+            par: []
+            for par in self.df_pars
+        }
+        # for ts in u.trajectory[::step]:
+        for ts in tqdm(u.trajectory[::step], desc="run"):
+            frame_results, frame_aux = self.calc_function(
+                solute=solute,
+                bb_atoms=bb_atoms,
+                solvent=solvent,
+                ions=ions,
+                ts=ts,
+                **kwargs,
+            )
+            results.append(frame_results)
+            for par in self.df_pars:
+                aux_results[par].append(frame_aux[par])
+        mean_aux_results = {
+            par: np.mean(aux_results[par], axis=0)
+            for par in self.df_pars
+        }
+        return pd.DataFrame(results), mean_aux_results
+
+    def calc_function(self, *args, **kwargs):
+        raise NotImplementedError
+
+@dataclass
+class HydrationAnalysis(Analysis):
+
+    pars: list[str] = field(default_factory=lambda: [
+        "time",
+        "V_eff",
+        "N_eff",
+        "V_eff_rho",
+        "rho_bulk",
+        "rho_solute",
+    ])
+    df_pars: list[str] = field(default_factory=lambda: [
+        "rho_hist"
+        ])
+    name: str = "hydration"
+    selection_solvent: str = "resname SOL and name OW"
+
+    def calc_function(
+        self,
+        solute,
+        bb_atoms,
+        solvent,
+        ions,
+        ts,
+        r0=30.0,
+        r_min_bulk=30.0,
+        r_max_bulk=35.0,
+        dr=0.5,
+        V_H2O=30.0,
+    ):
+        V_sphere = (4 / 3) * np.pi * r0**3
+        ref_pos = solute.center_of_mass()
+        diff = solvent.positions - ref_pos
+        r = np.linalg.norm(diff, axis=1)
+        inside = r < r0
+        N_in = np.sum(inside)
+        N_eff = 3 * V_sphere / V_H2O - N_in
+        V_eff = V_sphere - N_in * V_H2O / 3
+        bins = np.arange(0, r_max_bulk + dr, dr)
+        hist, edges = np.histogram(r, bins=bins)
+        r_centers = 0.5 * (edges[:-1] + edges[1:])
+        shell_volumes = (
+            4 / 3
+            * np.pi
+            * (edges[1:]**3 - edges[:-1]**3)
+        )
+        rho_r = hist / shell_volumes
+        solute_mask = r_centers <= r0
+        rho_solute = (
+            np.sum(hist[solute_mask])
+            / np.sum(shell_volumes[solute_mask])
+        )
+        rho_hist = hist / shell_volumes
+        rho_hist_df = pd.DataFrame({
+            'r': rho_r,
+            'rho': rho_hist})
+        bulk_mask = (
+            (r_centers >= r_min_bulk)
+            & (r_centers <= r_max_bulk)
+        )
+        rho_bulk = (
+            np.sum(hist[bulk_mask])
+            / np.sum(shell_volumes[bulk_mask])
+        )
+        V_eff_rho = (
+            (rho_bulk - rho_solute)
+            * V_sphere
+            / rho_bulk
+        )
+        results = {
+            "time": ts.time,
+            "V_eff": V_eff,
+            "N_eff": N_eff,
+            "V_eff_rho": V_eff_rho,
+            "rho_bulk": rho_bulk,
+            "rho_solute": rho_solute,
+            "rho_hist": rho_hist_df,
+        }
+        frame_aux = {'rho_hist': rho_hist_df}
+        return results, frame_aux
