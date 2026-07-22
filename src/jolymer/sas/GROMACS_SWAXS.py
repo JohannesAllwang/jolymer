@@ -1288,6 +1288,7 @@ class FbsAnalysis(Analysis):
         cutoff=5.0,
     ):
         n_res = len(solute.residues)
+        segids = [residue.segid for residue in solute.residues]
         base_coms = np.array([
             residue.atoms.select_atoms(self.select_group).center_of_mass()
             for residue in solute.residues
@@ -1295,7 +1296,7 @@ class FbsAnalysis(Analysis):
         dist_mat = np.full((n_res, n_res), np.nan)
         for i in range(n_res):
             for j in range(i + 1, n_res):
-                if i == 12 and j == 13:
+                if segids[i] != segids[j]:
                     continue
                 dist = distance_array(
                     base_coms[i][None, :],
@@ -1307,7 +1308,7 @@ class FbsAnalysis(Analysis):
         neighbor_dists = np.array([
             dist_mat[i, i + 1]
             for i in range(n_res - 1)
-            if i != 12
+            if segids[i] == segids[i + 1]
         ])
         r_edges = np.arange(0, r_max + dr, dr)
         r = 0.5 * (r_edges[:-1] + r_edges[1:])
@@ -1338,9 +1339,14 @@ class RadiusAnalysis(Analysis):
 
     def calc_function(self, solute, bb_atoms, solvent, ions, ts):
         Rg = solute.radius_of_gyration()
-        r0 = bb_atoms.positions[0]
-        rN = bb_atoms.positions[-1]
-        Ree = np.linalg.norm(rN - r0)
+        segids = np.unique(bb_atoms.segids)
+        Ree = [
+            np.linalg.norm(
+                bb_atoms.select_atoms(f"segid {segid}").positions[-1]
+                - bb_atoms.select_atoms(f"segid {segid}").positions[0]
+            )
+            for segid in segids
+        ]
         results = {
             "time": ts.time,
             "Rg": Rg,
