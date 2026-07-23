@@ -19,6 +19,8 @@ import fabio
 from pathlib import Path
 
 import MDAnalysis as mda
+from MDAnalysis.analysis.distances import distance_array
+
 
 from .. import os_utility as osu
 from .SAXS_Measurement import SAXS_Measurement
@@ -90,6 +92,9 @@ class GROMACS_SWAXS(SAXS_Measurement):
         if self.xtc_filename is None:
             self.xtc_filename = self.md_basename+'_center.xtc'
             self.xtc_filename = self.md_basename+'_fit.xtc'
+        self.nosol = False
+        if len(self.npt_filename.split('nosol') > 1):
+            self.nosol = True
         # if self.eigenval_filename is None:
         #     self.eigenval_filename = self.md_basename+'_spectra.xvg'
 
@@ -136,6 +141,24 @@ class GROMACS_SWAXS(SAXS_Measurement):
         # df.q = df.q/10
         df.time = df.time / 1000
         return df
+
+    def to_nosol(self):
+        if not self.nosol:
+            self.npt_filename = f'{self.npt_filename.split('.gro')[0]}_nosol.gro'
+            self.xtc_filename = f'{self.xtc_filename.split('_center.xtc')[0]}_fit_nosol.xtc'
+            self.u = None
+            self.nosol = True
+        else:
+            print(gs.name, "already nosol")
+
+    def to_sol(self):
+        if self.nosol:
+            self.npt_filename = f'{self.npt_filename.split('_nosol.gro')[0]}.gro'
+            self.xtc_filename = f'{self.xtc_filename.split('_fit_nosol.xtc')[0]}_center.xtc'
+            self.u = None
+            self.nosol = False
+        else:
+            print(gs.name, "already sol")
 
     def get_filename(self):
         return join(self.path, self.filename)
@@ -1105,6 +1128,42 @@ class GROMACS_SWAXS(SAXS_Measurement):
         print(f"Done! RMSD matrix written to '{out_file}'")
         print("Pro tip: use `np.loadtxt` or pandas to visualize later.")
 
+    def get_analysis_savepath(self, analysis_name):
+        outpath = Path('hydration_output', f'{analysis_name}_{gs.name}_{gs.si}.json')
+        return outpath
+
+    def run_analysis(self, analysis_name, *args, **kwargs):
+        An = analysis_dict{analysis_name}
+        u = self.get_u()
+        results, aux_results = An.run(u, *args, **kwargs)
+        save_path = self.get_analysis_savepath(analysis_name)
+        An.save_json(f'')
+        return results, aux_results
+
+    def run_hydration(self, *args, **kwargs):
+        return run_analysis(self, 'hydration', *args, **kwargs)
+
+    def run_fbs(self, *args, **kwargs):
+        return run_analysis(self, 'fbs', *args, **kwargs)
+
+    def run_radius(self, *args, **kwargs):
+        return run_analysis(self, 'radius', *args, **kwargs)
+
+    def load_analysis(self, analysis_name, *args, **kwargs):
+        results, aux_results = Analysis.load_json()
+        return results, aux_results
+
+    def get_hydration(self, *args, **kwargs):
+        results, aux_results = Analysis.load_json()
+        return results, aux_results
+
+    def get_fbs(self, *args, **kwargs):
+        results, aux_results = Analysis.load_json()
+        return results, aux_results
+
+    def get_radius(self, *args, **kwargs):
+        results, aux_results = Analysis.load_json()
+        return results, aux_results
 
 from dataclasses import dataclass, field
 import numpy as np
@@ -1283,9 +1342,9 @@ class FbsAnalysis(Analysis):
         solvent,
         ions,
         ts,
-        r_max=10.0,
+        r_max=50.0,
         dr=0.1,
-        cutoff=5.0,
+        cutoff=4.7,
     ):
         n_res = len(solute.residues)
         segids = [residue.segid for residue in solute.residues]
