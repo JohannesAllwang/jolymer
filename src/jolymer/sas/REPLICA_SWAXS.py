@@ -21,7 +21,7 @@ from pathlib import Path
 import MDAnalysis as mda
 
 from .. import os_utility as osu
-from .SAXS_Measurement import SAXS_Measurement
+from .GROMACS_SWAXS import GROMACS_SWAXS
 from .. import jocolors
 
 from dataclasses import dataclass, field
@@ -63,11 +63,14 @@ def _wsum(q, I_list, weights):
     return np.sum(w[:, None] * I, axis=0) / np.sum(w)
 
 @dataclass
-class REPLICA_SWAXS(SAXS_Measurement):
+class REPLICA_SWAXS(GROMACS_SWAXS):
 
-    gss: list[SAXS_Measurement] = field(default_factory=list)
+    gss: list[GROMACS_SWAXS] = field(default_factory=list)
     name: str = ""
 
+    def __post_init__(self):
+        for i, gs in enumerate(gss):
+            gs.NAME = f'R{i}_{gs.NAME}'
 
     def __len__(self):
         return len(self.gss)
@@ -377,3 +380,14 @@ class REPLICA_SWAXS(SAXS_Measurement):
                     linestyle='-', marker='', color=jocolors.tstum7, label=label)
         ax.legend()
         return popt
+
+    def run_analysis(self, analysis_name, *args, **kwargs):
+        for gs in self.gss:
+            results, aux_results = gs.run_analysis(analysis_name)
+            gs.analysis_results[analysis_name] = [results, aux_results]
+
+    def load_analysis(self, analysis_name):
+        for gs in self.gss:
+            results, aux_results = gs.load_analysis(analysis_name)
+            gs.analysis_results[analysis_name] = [results, aux_results]
+

@@ -75,6 +75,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
     plot_longheight: float=4
 
     min_index: int=0
+    analysis_results: dict=field(default_factory=dict)
 
     def __post_init__(self):
         if self.spectra_filename is None:
@@ -1134,7 +1135,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         return outpath
 
     def run_analysis(self, analysis_name, *args, **kwargs):
-        An = _analysis_dict{analysis_name}
+        An = _analysis_dict[analysis_name]
         if An.nosol:
             self.to_nosol()
         else:
@@ -1142,7 +1143,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         u = self.get_u()
         results, aux_results = An.run(u, *args, **kwargs)
         save_path = self.get_analysis_savepath(analysis_name)
-        An.save_json(f'')
+        An.save_json(save_path)
         return results, aux_results
 
     def run_hydration(self, *args, **kwargs):
