@@ -92,9 +92,9 @@ class GROMACS_SWAXS(SAXS_Measurement):
             self.swaxspot_filename = self.md_basename+'_pot.xvg'
         if self.xtc_filename is None:
             self.xtc_filename = self.md_basename+'_center.xtc'
-            self.xtc_filename = self.md_basename+'_fit.xtc'
+            ## self.xtc_filename = self.md_basename+'_fit.xtc'
         self.nosol = False
-        if len(self.npt_filename.split('nosol') > 1):
+        if len(self.npt_filename.split('nosol')) > 1:
             self.nosol = True
         self.NAME = f'{self.name}_{self.md_basename}'
         # if self.eigenval_filename is None:
@@ -798,7 +798,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         return odict['df'], chi2 if chi2 is not None else odict['chi2']
 
     def _compute_rg(self, df, angular_unit='A', plot=False, ax=None):
-        qmin, qmax = max(0.01, self.qmin), max(0.04, self.qmin + 0.6)
+        qmin, qmax = max(0.01, self.qmin), max(0.08, self.qmin + 0.08)
         dfr = df.copy()
         if angular_unit == 'A': dfr.q *= 10; qmin, qmax = 10*qmin, 10*qmax
         return SAXS_Measurement.get_rg(self, df=dfr, plot=plot, ax=ax, qmin=qmin, qmax=qmax)

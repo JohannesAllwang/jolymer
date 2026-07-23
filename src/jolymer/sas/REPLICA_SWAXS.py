@@ -22,6 +22,7 @@ import MDAnalysis as mda
 
 from .. import os_utility as osu
 from .GROMACS_SWAXS import GROMACS_SWAXS
+from .SAXS_Measurement import SAXS_Measurement
 from .. import jocolors
 
 from dataclasses import dataclass, field
@@ -69,8 +70,10 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
     name: str = ""
 
     def __post_init__(self):
-        for i, gs in enumerate(gss):
+        print('replica from:')
+        for i, gs in enumerate(self.gss):
             gs.NAME = f'R{i}_{gs.NAME}'
+            print(gs.NAME)
 
     def __len__(self):
         return len(self.gss)
@@ -165,18 +168,21 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
     def get_rg_dataframe(self, qmax=0.08):
         rows = []
         for irep, gs in enumerate(self.gss):
-            outdict = gs.plot_spectra(plot=False)
+            outdict = gs.plot_spectra(plot=False,
+                                      get_Rg=True)
             # print('outdict', outdict)
-            for ispec, (df, chi2) in enumerate(
-                    zip(outdict["df"], outdict["chi2"])):
+            for ispec, (df, chi2, Rg, err_Rg) in enumerate(
+                    zip(outdict["df"], outdict["chi2"],
+                        outdict["Rg"], outdict["err_Rg"])):
                 if ispec < gs.min_index:
                     continue
+                rgdict = SAXS_Measurement.get_rg(self, df=df, qmax=qmax)
                 try:
-                    rgdict = SAXS_Measurement.get_rg(self, df=df, qmax=qmax)
                     rows.append({
                         "replica": irep,
                         "spectrum": ispec,
                         "Rg": rgdict['Rg'],
+                        "err_Rg": rgdict['err_Rg'],
                         "chi2": chi2,
                         "df": df
                     })
