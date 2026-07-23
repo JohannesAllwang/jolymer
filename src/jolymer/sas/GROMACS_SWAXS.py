@@ -26,7 +26,7 @@ from .. import os_utility as osu
 from .SAXS_Measurement import SAXS_Measurement
 from .. import jocolors
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 def _colorbar(mappable):
     from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -95,6 +95,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         self.nosol = False
         if len(self.npt_filename.split('nosol') > 1):
             self.nosol = True
+        self.NAME = f'{self.name}_{self.md_basename}'
         # if self.eigenval_filename is None:
         #     self.eigenval_filename = self.md_basename+'_spectra.xvg'
 
@@ -1129,11 +1130,15 @@ class GROMACS_SWAXS(SAXS_Measurement):
         print("Pro tip: use `np.loadtxt` or pandas to visualize later.")
 
     def get_analysis_savepath(self, analysis_name):
-        outpath = Path('hydration_output', f'{analysis_name}_{gs.name}_{gs.si}.json')
+        outpath = Path('hydration_output', f'{self.NAME}_{analysis_name}')
         return outpath
 
     def run_analysis(self, analysis_name, *args, **kwargs):
-        An = analysis_dict{analysis_name}
+        An = _analysis_dict{analysis_name}
+        if An.nosol:
+            self.to_nosol()
+        else:
+            self.to_sol()
         u = self.get_u()
         results, aux_results = An.run(u, *args, **kwargs)
         save_path = self.get_analysis_savepath(analysis_name)
@@ -1150,25 +1155,21 @@ class GROMACS_SWAXS(SAXS_Measurement):
         return run_analysis(self, 'radius', *args, **kwargs)
 
     def load_analysis(self, analysis_name, *args, **kwargs):
+        save_path = self.get_analysis_savepath(analysis_name)
         results, aux_results = Analysis.load_json()
         return results, aux_results
 
-    def get_hydration(self, *args, **kwargs):
-        results, aux_results = Analysis.load_json()
+    def load_hydration(self, *args, **kwargs):
+        results, aux_results = self.load_analysis('hydration')
         return results, aux_results
 
-    def get_fbs(self, *args, **kwargs):
-        results, aux_results = Analysis.load_json()
+    def load_fbs(self, *args, **kwargs):
+        results, aux_results = Analysis.load_json('fbs')
         return results, aux_results
 
-    def get_radius(self, *args, **kwargs):
-        results, aux_results = Analysis.load_json()
+    def load_radius(self, *args, **kwargs):
+        results, aux_results = Analysis.load_json('radius')
         return results, aux_results
-
-from dataclasses import dataclass, field
-import numpy as np
-import pandas as pd
-
 
 @dataclass
 class Analysis:
@@ -1183,6 +1184,7 @@ class Analysis:
     selection_bb: str = "name P"
     selection_solvent: str = "resname SOL and not name H*"
     selection_ions: str = "resname NA CL"
+    nosol: bool = False
 
     def run(self, u, *, step=1, **kwargs):
         solute = u.select_atoms(self.selection_solute)
@@ -1262,6 +1264,7 @@ class HydrationAnalysis(Analysis):
         ])
     name: str = "hydration"
     selection_solvent: str = "resname SOL and name OW"
+    nosol: bool = False
 
     def calc_function(
         self,
@@ -1334,6 +1337,7 @@ class FbsAnalysis(Analysis):
         ])
     name: str = "BS"
     select_group: str = f"not name P O1P OP1 O2P OP2 O5' C5' C4' O4' C3' O3' C2' C1'"
+    nosol: bool = True
 
     def calc_function(
         self,
@@ -1395,6 +1399,7 @@ class RadiusAnalysis(Analysis):
     selection_solute: str = (
         "not resname SOL NA CL"
     )
+    nosol: bool = True
 
     def calc_function(self, solute, bb_atoms, solvent, ions, ts):
         Rg = solute.radius_of_gyration()
@@ -1413,3 +1418,9 @@ class RadiusAnalysis(Analysis):
         }
         frame_aux = {}
         return results, frame_aux
+
+_analysis_dict = {
+        'hydration': HydrationAnalysis,
+        'fbs': FbsAnalysis,
+        'radius': RadiusAnalysis
+        }
