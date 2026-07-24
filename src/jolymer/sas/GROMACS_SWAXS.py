@@ -151,7 +151,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
             self.u = None
             self.nosol = True
         else:
-            print(gs.name, "already nosol")
+            print(self.NAME, "already nosol")
 
     def to_sol(self):
         if self.nosol:
@@ -160,7 +160,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
             self.u = None
             self.nosol = False
         else:
-            print(gs.name, "already sol")
+            print(self.NAME, "already sol")
 
     def get_filename(self):
         return join(self.path, self.filename)
@@ -1130,20 +1130,20 @@ class GROMACS_SWAXS(SAXS_Measurement):
         print(f"Done! RMSD matrix written to '{out_file}'")
         print("Pro tip: use `np.loadtxt` or pandas to visualize later.")
 
-    def get_analysis_savepath(self, analysis_name):
-        outpath = Path('hydration_output', f'{self.NAME}_{analysis_name}')
+    def get_analysis_filename(self, analysis_name):
+        outpath = Path(f'{self.NAME}_{analysis_name}')
         return outpath
 
     def run_analysis(self, analysis_name, *args, **kwargs):
-        An = _analysis_dict[analysis_name]
+        An = _analysis_dict[analysis_name]()
         if An.nosol:
             self.to_nosol()
         else:
             self.to_sol()
         u = self.get_u()
         results, aux_results = An.run(u, *args, **kwargs)
-        save_path = self.get_analysis_savepath(analysis_name)
-        An.save_json(save_path)
+        save_path = self.get_analysis_filename(analysis_name)
+        An.save_json(save_path, results, aux_results=aux_results)
         return results, aux_results
 
     def run_hydration(self, *args, **kwargs):
@@ -1156,7 +1156,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         return run_analysis(self, 'radius', *args, **kwargs)
 
     def load_analysis(self, analysis_name, *args, **kwargs):
-        save_path = self.get_analysis_savepath(analysis_name)
+        save_path = self.get_analysis_filename(analysis_name)
         results, aux_results = Analysis.load_json()
         return results, aux_results
 
@@ -1223,7 +1223,7 @@ class Analysis:
         self,
         filename,
         results,
-        mean_aux_results=None,
+        aux_results=None,
     ):
         output_dir = Path("hydration_output")
         output_dir.mkdir(exist_ok=True)
@@ -1231,9 +1231,9 @@ class Analysis:
             output_dir / f"{filename}_results.json",
             orient="table",
         )
-        if mean_aux_results is not None:
+        if aux_results is not None:
             for dfpar in self.df_pars:
-                aux_df = pd.DataFrame(mean_aux_results[dfpar])
+                aux_df = pd.DataFrame(aux_results[dfpar])
                 aux_df.to_json(
                     output_dir / f"{filename}_{dfpar}.json",
                     orient="table",
@@ -1256,6 +1256,7 @@ class HydrationAnalysis(Analysis):
 
     pars: list[str] = field(default_factory=lambda: [
         "time",
+        "frame",
         "V_eff",
         "rho_bulk",
         "rho_solute",
@@ -1275,8 +1276,8 @@ class HydrationAnalysis(Analysis):
         ions,
         ts,
         r0=30.0,
-        r_min_bulk=30.0,
-        r_max_bulk=35.0,
+        r_min_bulk=31.0,
+        r_max_bulk=36.0,
         dr=0.5,
     ):
         V_sphere = (4 / 3) * np.pi * r0**3
@@ -1318,6 +1319,7 @@ class HydrationAnalysis(Analysis):
         )
         results = {
             "time": ts.time,
+            "frame" : ts.frame,
             "V_eff": V_eff_rho,
             "rho_bulk": rho_bulk,
             "rho_solute": rho_solute,
@@ -1330,6 +1332,7 @@ class FbsAnalysis(Analysis):
 
     pars: list[str] = field(default_factory=lambda: [
         "time",
+        "frame",
         "fbs",
         "distance_matrices",
     ])
@@ -1381,6 +1384,7 @@ class FbsAnalysis(Analysis):
         fbs = np.sum(neighbor_dists < cutoff) / len(neighbor_dists)
         results = {
             "time": ts.time,
+            "frame": ts.frame,
             "fbs": fbs,
             "distance_matrices": dist_mat.tolist(),
         }
@@ -1392,6 +1396,7 @@ class RadiusAnalysis(Analysis):
 
     pars: list[str] = field(default_factory=lambda: [
         "time",
+        "frame",
         "Rg",
         "Ree",
     ])
@@ -1414,6 +1419,7 @@ class RadiusAnalysis(Analysis):
         ]
         results = {
             "time": ts.time,
+            "frame": ts.frame,
             "Rg": Rg,
             "Ree": Ree,
         }

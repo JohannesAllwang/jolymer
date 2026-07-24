@@ -71,8 +71,11 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
 
     def __post_init__(self):
         print('replica from:')
-        for i, gs in enumerate(self.gss):
-            gs.NAME = f'R{i}_{gs.NAME}'
+        self.NAME = f'R_{self.gss[0].NAME}'
+        for irep, gs in enumerate(self.gss):
+            gs.npt_filename = f'../{gs.npt_filename}'
+            gs.irep = irep
+            gs.NAME = f'R{irep}_{gs.NAME}'
             print(gs.NAME)
 
     def __len__(self):
@@ -388,12 +391,122 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         return popt
 
     def run_analysis(self, analysis_name, *args, **kwargs):
-        for gs in self.gss:
-            results, aux_results = gs.run_analysis(analysis_name)
+        dfs = []
+        for irep, gs in enumerate(self.gss):
+            results, aux_results = gs.run_analysis(
+                analysis_name, *args, **kwargs
+            )
             gs.analysis_results[analysis_name] = [results, aux_results]
+            results = results.copy()
+            results["irep"] = irep
+            dfs.append(results)
+        return pd.concat(dfs, ignore_index=True)
 
     def load_analysis(self, analysis_name):
-        for gs in self.gss:
+        dfs = []
+        for irep, gs in enumerate(self.gss):
             results, aux_results = gs.load_analysis(analysis_name)
             gs.analysis_results[analysis_name] = [results, aux_results]
+            results = results.copy()
+            results["irep"] = irep
+            dfs.append(results)
+        return pd.concat(dfs, ignore_index=True)
+
+    def load_analysis(self, analysis_name):
+        for irep, gs in enumerate(self.gss):
+            results, aux_results = gs.load_analysis(analysis_name)
+            gs.analysis_results[analysis_name] = [results, aux_results]
+
+    def get_occupancy_histogramm(self, df, parameters=['Rg'], bins=10):
+        X = df[parameters].to_numpy()
+        H, edges = np.histogramdd(X, bins=bins)
+        bin_indices = []
+        for i, edge in enumerate(edges):
+            idx = np.digitize(X[:, i], edge) - 1
+            idx = np.clip(idx, 0, len(edge)-2)
+            bin_indices.append(idx)
+            print(idx)
+        name = "_".join(parameters)
+        df = df.copy()
+        df[f"bin_{name}"] = list(zip(*bin_indices))
+        return df, H, edges
+
+    def save_bins(self, df, parameters):
+        bin_column = '_'.join(parameters)
+        bin_column = f'bin_{bin_column}'
+        def load_u(gs):
+            gs.to_sol()
+            return gs.get_u()
+        universes = [load_u(gs) for gs in self.gss]
+        outdir = Path(self.gss[0].mdpath).parent / self.NAME
+        osu.create_path(outdir)
+        lookup = []
+        for bin in sorted(df[bin_column].unique()):
+            bin_name = "_".join(str(int(x)) for x in bin)
+            outname = outdir / f"{bin_column}_{bin_name}.xtc"
+            with mda.Writer(str(outname), n_atoms=universes[0].atoms.n_atoms) as W:
+                subset = df[df[bin_column] == bin]
+                if len(subset) < 100:
+                    continue
+                else:
+                    print('bin', outname, 'N', len(subset))
+                lookup_row = {
+                    "file": outname,
+                    "N": len(subset),
+                }
+                for p in parameters:
+                    lookup_row[p] = subset[p].mean()
+                lookup.append(lookup_row)
+                for _, row in subset.iterrows():
+                    u = universes[int(row["irep"])]
+                    u.trajectory[int(row["frame"])]
+                    W.write(u.atoms)
+        lookup_df = pd.DataFrame(lookup)
+        lookup_df.to_csv(
+            outdir / "lookup.dat",
+            sep="\t",
+            index=False
+        )
+        return lookup_df
+
+    def plot_bins(self, parameters, H, edges, axes=None):
+        from itertools import combinations
+        import copy
+        pairs = list(combinations(range(len(parameters)), 2))
+        if axes is None:
+            nrows = len(pairs)
+            ncols = 1
+            if len(pairs)>3:
+                nrows = len(pairs) // 2
+                ncols = 2
+            fig, axes = plt.subplots(
+                nrows=nrows,
+                ncols=ncols,
+                squeeze=False,
+                figsize=(3.5*ncols, 3*nrows))
+            axes = axes.flatten()
+        else:
+            fig = axes[0].get_figure()
+        for ax, (i, j) in zip(axes, pairs):
+            H2 = H
+            sum_axes = sorted(
+                set(range(H.ndim)) - {i, j},
+                reverse=True
+            )
+            for axis in sum_axes:
+                H2 = H2.sum(axis=axis)
+            cmap = copy.copy(plt.cm.viridis)
+            cmap.set_bad("white")
+            Hplot = np.ma.masked_less(H2, 100)
+            im = ax.pcolormesh(
+                edges[i],
+                edges[j],
+                Hplot.T,
+                shading="auto",
+                cmap=cmap
+            )
+            fig.colorbar(im, ax=ax, label="Frames")
+            ax.set_xlabel(parameters[i])
+            ax.set_ylabel(parameters[j])
+        return fig
 
