@@ -431,7 +431,7 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         df[f"bin_{name}"] = list(zip(*bin_indices))
         return df, H, edges
 
-    def save_bins(self, df, parameters):
+    def save_bins(self, df, parameters, save=True):
         bin_column = '_'.join(parameters)
         bin_column = f'bin_{bin_column}'
         def load_u(gs):
@@ -457,10 +457,11 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                 for p in parameters:
                     lookup_row[p] = subset[p].mean()
                 lookup.append(lookup_row)
-                for _, row in subset.iterrows():
-                    u = universes[int(row["irep"])]
-                    u.trajectory[int(row["frame"])]
-                    W.write(u.atoms)
+                if save:
+                    for _, row in subset.iterrows():
+                        u = universes[int(row["irep"])]
+                        u.trajectory[int(row["frame"])]
+                        W.write(u.atoms)
         lookup_df = pd.DataFrame(lookup)
         lookup_df.to_csv(
             outdir / "lookup.dat",
