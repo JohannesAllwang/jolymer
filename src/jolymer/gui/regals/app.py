@@ -23,7 +23,7 @@ from jolymer.gui.regals.views.uv import UVWindow
 from jolymer.gui.regals.views.saxs import SAXSWindow
 from jolymer.gui.regals.views.waxs import WAXSWindow
 from jolymer.gui.regals.views.alignment import AlignmentWindow
-from jolymer.gui.regals.state import BioREGALSState
+from jolymer.sas.SEC_SWAXS import SEC_SWAXS
 from jolymer.gui.regals.console.ipython_widget import IPythonConsole
 from jolymer.sas.bioREGALS import bioREGALS
 import jolymer.os_utility as osu
@@ -95,7 +95,7 @@ class RunOptionsWidget(QWidget):
 class RegalsMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.state = BioREGALSState()
+        self.state = SEC_SWAXS()
         self.setWindowTitle("bioREGALS (demo GUI)")
         self.resize(1200, 800)
         # Central widget
