@@ -500,12 +500,20 @@ class SAXS_Measurement(Measurement):
         def guinier(q, Rg, I0):
             I = I0 * np.exp(-(Rg*q)**2/3)
             return I
-        popt, pcov = optimize.curve_fit(guinier, df.q, df.I, sigma=df.err_I, p0=[Rg0, I00], bounds=bounds)
-        outdict['Rg'] = popt[0]
-        outdict['err_Rg'] = np.sqrt(pcov[0, 0])
-        outdict['I0'] = popt[1]
-        outdict['err_I0'] = np.sqrt(pcov[1, 1])
-        outdict['chi2'] = np.sum(((df.I - guinier(df.q, *popt)) / df.err_I)**2) / len(df.q)
+        try:
+            popt, pcov = optimize.curve_fit(guinier, df.q, df.I, sigma=df.err_I, p0=[Rg0, I00], bounds=bounds)
+            outdict['Rg'] = popt[0]
+            outdict['err_Rg'] = np.sqrt(pcov[0, 0])
+            outdict['I0'] = popt[1]
+            outdict['err_I0'] = np.sqrt(pcov[1, 1])
+            outdict['chi2'] = np.sum(((df.I - guinier(df.q, *popt)) / df.err_I)**2) / len(df.q)
+        except Exception as e:
+            outdict['Rg'] = None
+            outdict['err_Rg'] = None
+            outdict['I0'] = None
+            outdict['err_I0'] = None
+            outdict['chi2'] = None
+            print(e)
         if plot:
             if ax is None:
                 ax = self.plot_data(**plot_kwargs)
