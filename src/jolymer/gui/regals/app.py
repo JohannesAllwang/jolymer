@@ -300,7 +300,7 @@ class RegalsMainWindow(QMainWindow):
             #chi2 vs x
             axs[1, 0].plot(x, np.mean(resid ** 2, 0))
             axs[1, 0].set_xlabel('$x$')
-            axs[1, 0].set_ylabel('$\chi^2$')
+            axs[1, 0].set_ylabel(r'$\chi^2$')
             axs[1, 0].set_ylim(0,10)
             #profiles vs q
             axs[0, 1].semilogx(q, MM.profiles)
