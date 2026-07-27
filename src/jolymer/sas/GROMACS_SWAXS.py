@@ -759,7 +759,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
             if get_Rg:
                 Rgdict = self._compute_rg(df, angular_unit=angular_unit, plot=plot, ax=ax)
                 Rg = Rgdict['Rg']
-                if not (Rg_filter[0] <= Rg <= Rg_filter[1]): continue
+                # if not (Rg_filter[0] <= Rg <= Rg_filter[1]): continue
                 for k, v in Rgdict.items():
                     if k == 'chi2': outdict['Rchi2'].append(v)
                     else: outdict[k].append(v)
@@ -851,27 +851,27 @@ class GROMACS_SWAXS(SAXS_Measurement):
         if rmsf_filename is None:
             rmsf_filename = self.rmsf_filename
         print(spectra_filename)
-        try:
-            spectra_dict = self.plot_spectra(filename=spectra_filename,
-                                         path=mdpath,
-                                         every_n=1,
-                                         max_out=100000,
-                                         plot=plot_spectra,
-                                         angular_unit='nm',
-                                         get_Rg=True)
-            for key in spectra_dict.keys():
-                print(key, len(spectra_dict[key]))
-            spectra_df = pd.DataFrame({'time': spectra_dict['time'],
-                                   'chi2': spectra_dict['chi2'],
-                                   'I0': spectra_dict['I0'],
-                                   'err_I0': spectra_dict['err_I0'],
-                                   'Rg': spectra_dict['Rg'],
-                                   'err_Rg': spectra_dict['err_Rg']})
+        # try:
+        spectra_dict = self.plot_spectra(filename=spectra_filename,
+                                     path=mdpath,
+                                     every_n=1,
+                                     max_out=100000,
+                                     plot=plot_spectra,
+                                     angular_unit='nm',
+                                     get_Rg=True)
+        for key in spectra_dict.keys():
+            print(key, len(spectra_dict[key]))
+        spectra_df = pd.DataFrame({'time': spectra_dict['time'],
+                               'chi2': spectra_dict['chi2'],
+                               'I0': spectra_dict['I0'],
+                               'err_I0': spectra_dict['err_I0'],
+                               'Rg': spectra_dict['Rg'],
+                               'err_Rg': spectra_dict['err_Rg']})
             # print(spectra_dict)
-        except Exception as e:
-            print('failed to load spectra dict:')
-            print(e)
-            spectra_filename = None
+        # except Exception as e:
+        #     print('failed to load spectra dict:')
+        #     print(e)
+        #     spectra_filename = None
         try:
             proj_df = self.get_proj(mdpath=mdpath, filename=proj_filename)
             # print(proj_df)
