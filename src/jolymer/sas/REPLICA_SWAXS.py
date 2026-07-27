@@ -202,7 +202,7 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         highlight="best_chi2",
         cmap="plasma"):
         if ax is None:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=(4,3))
         else:
             fig = ax.figure
         rgdf = self.get_rg_dataframe(qmax=qmax_rg)
@@ -244,6 +244,27 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         cbar.set_label(r"$R_g$ ($\AA$)")
         self.gss[0].plot_data(color='black', marker='', ax=ax, unit='A')
         return rgdf
+
+    def plot_average( self,
+                    qmax_rg=0.08,
+                     ax=None, fit_color=jocolors.tstum7):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(4,3))
+        else:
+            fig = ax.figure
+        self.gss[0].plot_data(color=jocolors.tstum1, marker='o',
+                              linestyle='',
+                              ax=ax, unit='A')
+        rgdf = self.get_rg_dataframe(qmax=qmax_rg)
+        dfs = []
+        for _, row in rgdf.sort_values("Rg").iterrows():
+            dfs.append(row.df)
+        average_df = dfs[0].copy()
+        n = min(len(df) for df in dfs)
+        average_df['I'] = np.vstack([df.I.iloc[:n] for df in dfs]).mean(axis=0)
+        ax.errorbar(average_df.q, average_df.I, marker='', linestyle='-', color=jocolors.tstum7)
+        return ax
+
 
     def plot_rg_histogram(
             self,
@@ -514,6 +535,7 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         else:
             fig = ax.get_figure()
         pardfdict = self.get_bins_final(parameters)
+        gs = self.gss[0]
         print(parameters.index('Rg'))
         for df, bin, par_values in zip(
                 pardfdict['dfs'],
@@ -530,6 +552,11 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                 label = ''
                 for par, parv in zip(parameters, par_values):
                     label += f'{par}={parv:.1f};'
+                print(bin)
+                print(label)
+                df['err_I'] = 1
+                rgdict = SAXS_Measurement.get_rg(gs, df=df, qmax=0.1)
+                print('RG', rgdict['Rg'])
                 ax.errorbar(df.q, df.I, label=label, marker='')
 
     def plot_bins(self, parameters, H, edges, axes=None):
