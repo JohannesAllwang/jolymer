@@ -7,13 +7,13 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
 from jolymer.uv.onlineUV import onlineUV
-from jolymer.gui.regals.state import BioREGALSState
+from jolymer.sas.SEC_SWAXS import SEC_SWAXS
 from jolymer.gui.regals.console.ipython_widget import IPythonConsole
 
 from pathlib import Path
 
 class AlignmentWindow(QMainWindow):
-    def __init__(self, state: BioREGALSState, parent=None):
+    def __init__(self, state: SEC_SWAXS, parent=None):
         super().__init__(parent)
         self.state = state
         self.setWindowTitle("Alignment")

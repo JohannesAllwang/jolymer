@@ -431,6 +431,10 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         df[f"bin_{name}"] = list(zip(*bin_indices))
         return df, H, edges
 
+    def get_bins_outdir(self):
+        return Path(self.gss[0].mdpath).parent / self.NAME
+
+
     def save_bins(self, df, parameters, save=True):
         bin_column = '_'.join(parameters)
         bin_column = f'bin_{bin_column}'
@@ -438,7 +442,7 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
             gs.to_sol()
             return gs.get_u()
         universes = [load_u(gs) for gs in self.gss]
-        outdir = Path(self.gss[0].mdpath).parent / self.NAME
+        outdir = self.get_bins_outdir()
         osu.create_path(outdir)
         lookup = []
         for bin in sorted(df[bin_column].unique()):
@@ -469,6 +473,64 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
             index=False
         )
         return lookup_df
+
+    def get_bins_final(self, parameters):
+        bin_column = '_'.join(parameters)
+        bin_column = f'bin_{bin_column}'
+        gs = self.gss[0]
+        outdir = self.get_bins_outdir()
+        osu.create_path(outdir)
+        outdict = {'dfs': [],
+                   'bins': [],
+                   'par_values': []}
+        lookup_df = pd.read_csv(
+                outdir / "lookup.dat",
+                sep="\t")
+        lookup_df['bin'] = (
+            lookup_df['file']
+            .str.split(f'{parameters[-1]}_').str[1]
+            .str.split('.xtc').str[0]
+            .str.split('_')
+        )
+        for _, row in lookup_df.iterrows():
+            bin_name = row["file"].split(f"{parameters[-1]}_")[1].split(".xtc")[0]
+            dfd = gs.get_data()
+            dfg = gs.get_gromacs(
+                path=outdir,
+                filename=f"rerun_{bin_column}_{bin_name}_final.xvg"
+            )
+            dfgs = gs.scale_and_offset_fit(dfd, dfg)["df"]
+            par_values = row[parameters].tolist()
+            outdict["dfs"].append(dfgs)
+            outdict["bins"].append(bin_name)
+            outdict["par_values"].append(par_values)
+        return outdict
+
+    def plot_bins_final(self, parameters,
+                        ranges={},
+                        ax=None):
+        if ax is None:
+            fig, ax = plt.subplots()
+        else:
+            fig = ax.get_figure()
+        pardfdict = self.get_bins_final(parameters)
+        print(parameters.index('Rg'))
+        for df, bin, par_values in zip(
+                pardfdict['dfs'],
+                pardfdict['bins'],
+                pardfdict['par_values']):
+            ok = True
+            for par, value in zip(parameters, par_values):
+                if par in ranges:
+                    low, high = ranges[par]
+                    if not (low <= value <= high):
+                        ok = False
+                        break
+            if ok:
+                label = ''
+                for par, parv in zip(parameters, par_values):
+                    label += f'{par}={parv:.1f};'
+                ax.errorbar(df.q, df.I, label=label, marker='')
 
     def plot_bins(self, parameters, H, edges, axes=None):
         from itertools import combinations
