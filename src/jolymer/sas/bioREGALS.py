@@ -134,3 +134,124 @@ class bioREGALS(regals):
         self.err_waxs = err_waxs
         self.onlineUV = onlineUV
 
+import numpy as np
+from scipy.optimize import nnls
+
+
+class bioEFA(efa):
+
+    def __init__(self, I, sigma=np.array([]), uv=None):
+        super().__init__(I, sigma)
+        if uv is not None:
+            self.wl = uv.iloc[:,0].values
+            self.uv = uv.iloc[:,1:].values
+        else:
+            self.wl = np.array([])
+            self.uv = np.array([])
+
+    @property
+    def Nuv(self):
+        return self.uv.shape[0]
+
+    @property
+    def Nframes(self):
+        return self.uv.shape[1]
+
+    def select_uv_range(self, wl_min=220, wl_max=300):
+        mask = np.logical_and(
+            self.wl >= wl_min,
+            self.wl <= wl_max
+        )
+        self.wl = self.wl[mask]
+        self.uv = self.uv[mask,:]
+
+    def uv_svd(self, k=None):
+        if k is None:
+            k = min(self.uv.shape)
+        U,s,Vt = np.linalg.svd(
+            self.uv,
+            full_matrices=False
+        )
+        return (
+            U[:,:k],
+            s[:k],
+            Vt[:k,:]
+        )
+
+    def constrained_factors(self, k,
+                            uv_threshold=None):
+        """
+        Find SAXS factors constrained by UV.
+        Returns:
+            F(q,k)     scattering profiles
+            C(k,t)     concentration profiles
+            scale(k)   UV->SAXS scaling
+        """
+        A = self.I.copy()
+        if len(self.sigma) != 0:
+            A = A / self.sigma[:,None]
+        Us, ss, Vst = np.linalg.svd(
+            A,
+            full_matrices=False
+        )
+        Us = Us[:, :k]
+        ss = ss[:k]
+        Vst = Vst[:k,:]
+        C_saxs = np.diag(ss) @ Vst
+        Uuv, suv, Vuv = self.uv_svd(k=k)
+        C_uv = Vuv[:k,:]
+        R = np.linalg.lstsq(
+            C_uv.T,
+            C_saxs.T,
+            rcond=None
+        )[0].T
+        C = R @ C_uv
+        scale = np.zeros(k)
+        for i in range(k):
+            x = C_uv[i,:]
+            y = C[i,:]
+            scale[i] = (
+                np.dot(x,y) /
+                np.dot(x,x)
+            )
+        C = np.diag(scale) @ C_uv
+        F = Us @ np.linalg.pinv(
+            R @ np.diag(scale)
+        )
+        return {
+            "F": F,
+            "C": C,
+            "scale": scale,
+            "uv_spectra": Uuv,
+            "uv_singular": suv
+        }
+
+    def evolving_uv_factors(self,
+                            k,
+                            direction="forward",
+                            skip=1):
+        """
+        EFA but with UV constrained factors.
+        """
+        ncols = self.Nc
+        factors = np.full(
+            (k,ncols),
+            np.nan
+        )
+        for j in range(0,ncols,skip):
+            if direction.lower()=="forward":
+                cols=np.arange(j+1)
+            elif direction.lower()=="reverse":
+                cols=np.arange(j,ncols)
+            else:
+                raise ValueError(
+                    "direction must be forward/reverse"
+                )
+            result=self.constrained_factors(
+                k
+            )
+            factors[:,j]=np.linalg.norm(
+                result["C"][:,cols],
+                axis=1
+            )
+        return factors

@@ -59,9 +59,7 @@ class onlineUV(Measurement):
         with open(self.get_filename(), "r") as f:
             first_line = f.readline()
             n_cols = len(first_line.split())
-
         colnames = ["wl"] + [f"Abs{i}" for i in range(n_cols - 1)]
-
         df = pd.read_csv(
             self.get_filename(),
             sep=r"\s+",
