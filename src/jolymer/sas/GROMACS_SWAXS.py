@@ -588,7 +588,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
             f"  GROMACS-SWAXS: {mean_swaxs:.3f} ± {std_swaxs:.3f} nm\n"
             f"  gmx gyrate:    {mean_gyrate:.3f} ± {std_gyrate:.3f} nm"
         )
-        fig_best, ax_best = plt.subplots(figsize=(6, 3))
+        fig_best, ax_best = plt.subplots(figsize=(3.25, 1.5))
         self._plot_bestfit_rg_segments(
             df=df,
             dfrg=dfrg,
@@ -747,11 +747,12 @@ class GROMACS_SWAXS(SAXS_Measurement):
             ax = self.plot_data(ax=ax, label=f'{self.name}', marker=self.marker, linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
         out = self.get_waxs_spectra(file, every_n=every_n, max_out=max_out)
         dfs, times = out['dfs'][1::], out['times'][1::]
-        print('il', index_list)
+        # print('il', index_list)
         if index_list is not None:
             dfs = [dfs[i] for i in index_list]
             times = [times[i] for i in index_list]
-        for i, (df, time) in enumerate(zip(dfs, times)):
+        for i, (dff, time) in enumerate(zip(dfs, times)):
+            df = dff.copy()
             df = self._prepare_spectrum(df, angular_unit=angular_unit, q_cutoff=q_cutoff)
             df, chi2 = self._fit_spectrum(df_data, df, maxqfit=maxqfit)
             if not (chi2_filter[0] <= chi2 <= chi2_filter[1]): continue
@@ -798,7 +799,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         return odict['df'], chi2 if chi2 is not None else odict['chi2']
 
     def _compute_rg(self, df, angular_unit='A', plot=False, ax=None):
-        qmin, qmax = max(0.01, self.qmin), max(0.08, self.qmin + 0.08)
+        qmin, qmax = 0.08, 0.1
         dfr = df.copy()
         if angular_unit == 'A': dfr.q *= 10; qmin, qmax = 10*qmin, 10*qmax
         return SAXS_Measurement.get_rg(self, df=dfr, plot=plot, ax=ax, qmin=qmin, qmax=qmax)
@@ -857,7 +858,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
                                      every_n=1,
                                      max_out=100000,
                                      plot=plot_spectra,
-                                     angular_unit='nm',
+                                     angular_unit='A',
                                      get_Rg=True)
         for key in spectra_dict.keys():
             print(key, len(spectra_dict[key]))

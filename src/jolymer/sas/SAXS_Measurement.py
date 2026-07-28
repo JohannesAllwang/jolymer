@@ -434,7 +434,6 @@ class SAXS_Measurement(Measurement):
         import numpy as np
         from scipy import optimize
         from scipy.interpolate import interp1d
-
         outdict = {}
         # Interpolate y_original onto the x-values of y_intact
         df_ref_out = df_ref[df_ref.q < np.max(df_scale.q)]
@@ -494,30 +493,30 @@ class SAXS_Measurement(Measurement):
             I00 = df.I.max()
         if df is None:
             df = self.get_data()
-        df = df[df.q > qmin]
-        df = df[df.q < qmax]
-        df['lnI'] = np.log(df.I)
+        datadf = df.copy()
+        datadf = datadf[datadf.q > qmin]
+        datadf = datadf[datadf.q < qmax]
+        datadf['lnI'] = np.log(datadf.I)
         def guinier(q, Rg, I0):
             I = I0 * np.exp(-(Rg*q)**2/3)
             return I
-        try:
-            popt, pcov = optimize.curve_fit(guinier, df.q, df.I, sigma=df.err_I, p0=[Rg0, I00], bounds=bounds)
-            outdict['Rg'] = popt[0]
-            outdict['err_Rg'] = np.sqrt(pcov[0, 0])
-            outdict['I0'] = popt[1]
-            outdict['err_I0'] = np.sqrt(pcov[1, 1])
-            outdict['chi2'] = np.sum(((df.I - guinier(df.q, *popt)) / df.err_I)**2) / len(df.q)
-        except Exception as e:
-            outdict['Rg'] = None
-            outdict['err_Rg'] = None
-            outdict['I0'] = None
-            outdict['err_I0'] = None
-            outdict['chi2'] = None
-            print(e)
+        popt, pcov = optimize.curve_fit(guinier, datadf.q, datadf.I, sigma=datadf.err_I, p0=[Rg0, I00], bounds=bounds)
+        outdict['Rg'] = popt[0]
+        outdict['err_Rg'] = np.sqrt(pcov[0, 0])
+        outdict['I0'] = popt[1]
+        outdict['err_I0'] = np.sqrt(pcov[1, 1])
+        outdict['chi2'] = np.sum(((datadf.I - guinier(datadf.q, *popt)) / datadf.err_I)**2) / len(datadf.q)
+        # except Exception as e:
+        #     outdict['Rg'] = None
+        #     outdict['err_Rg'] = None
+        #     outdict['I0'] = None
+        #     outdict['err_I0'] = None
+        #     outdict['chi2'] = None
+        #     print('get_rg', e)
         if plot:
             if ax is None:
                 ax = self.plot_data(**plot_kwargs)
-            ax.errorbar(df.q, guinier(df.q, *popt), marker='', linestyle='-.', label='fit')
+            ax.errorbar(datadf.q, guinier(datadf.q, *popt), marker='', linestyle='-.', label='fit')
         return outdict
 
 def gen_guinier_fitfunc(alpha):
