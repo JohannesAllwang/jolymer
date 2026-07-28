@@ -31,7 +31,6 @@ class onlineUV(Measurement):
     outwl: float=280
     alignment_time: float=280
 
-    # --------------------------------------------------------
     def __post_init__(self, sample:bioMOLECULE=ac6):
         # Example: "20221117_AC6_0_1_34ul_c01_000001.spc"
         self.name = self.spec_filename.split("01")[0]
@@ -39,14 +38,12 @@ class onlineUV(Measurement):
         self.sample = sample
         osu.create_path("ellution")
 
-    # --------------------------------------------------------
     def get_spec_filename(self):
         return Path(self.path) / self.spec_filename
 
     def get_filename(self):
         return Path("ellution") / self.filename
 
-    # --------------------------------------------------------
     def get_data(self):
         """Convert .spc → .dat, then read the data."""
         import spc_spectra as spc
@@ -55,7 +52,6 @@ class onlineUV(Measurement):
         spc_file.write_file(self.get_filename())
         return self.load_data()
 
-    # --------------------------------------------------------
     def load_data(self):
         """Load the whitespace-delimited .dat file as a DataFrame."""
 
@@ -74,7 +70,6 @@ class onlineUV(Measurement):
         )
         return df
 
-    # --------------------------------------------------------
     def get_scaled_Abs(self, refwl=None, outwl=None, alignment_time=None,
                        show=False, show_wl=[]):
         """
@@ -152,7 +147,6 @@ class onlineUV(Measurement):
             ax.legend()
 
         return outdict["scaled_out"]
-        # return pd.DataFrame(outdict)
 
     def plot_full_wavelength_map(self,
                               wl_min=210,

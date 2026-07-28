@@ -251,9 +251,7 @@ class AlignSAXS_WAXS:
         b : ndarray
             Frame-wise offsets (n_frames,)
         """
-
         import matplotlib.pyplot as plt
-        # --- rebuild overlap (guarantees consistency) ---
         md = self.interpolate_matrix(qmin=qmin, qmax=qmax)
         Iw = md['Iw_ov']
         Is = md['Is_ov']
@@ -295,7 +293,6 @@ class AlignSAXS_WAXS:
         plt.title("SAXS–WAXS Global Alignment Diagnostics")
         fig.tight_layout()
         return chi2_per_frame
-
 
 
 @dataclass
