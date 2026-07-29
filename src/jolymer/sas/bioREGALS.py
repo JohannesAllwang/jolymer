@@ -219,3 +219,28 @@ class bioEFA(efa):
             result = self.constrained_factors(k, cols=cols)
             factors[:,j] = np.linalg.norm(result["C"], axis=1)
         return factors
+
+    def quick_rotate(self, xstart, xend):
+        ncomp = len(xstart)
+        w = 1 / np.mean(self.sigma,1)
+        u, s, v = np.linalg.svd(np.diag(w,0) @ self.I, full_matrices=False)
+        u = u[:,:ncomp]
+        s = s[:ncomp]
+        v = v.T[:,:ncomp]
+        R = np.zeros((ncomp,ncomp))
+        for n in range(ncomp):
+            m = np.full(v.shape[0],False)
+            m[int(np.ceil(xstart[n])):int(np.floor(xend[n]))] = True
+            if not m.any():
+                raise ValueError(f'empty window for component {n}: xstart={xstart[n]}, xend={xend[n]}')
+            v_in = v[m,:]
+            v_out = v[~m,:]
+            A = v_out
+            B = np.mean(v_in, 0)
+            AA = A.T @ A
+            BB = np.outer(B,B)
+            lmbd = 1E6 * np.trace(AA) / np.trace(BB)
+            R[:,n] = np.linalg.solve(AA + lmbd * BB, lmbd * B * 1)
+        y = (u @ np.diag(s) @ np.linalg.pinv(R.T)) / w[:,np.newaxis]
+        c = R.T @ v.T
+        return [y, c, R]
