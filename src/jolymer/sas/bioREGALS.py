@@ -176,17 +176,19 @@ class bioEFA(efa):
         if len(self.sigma) != 0:
             if self.sigma.shape[0] != self.Nr:
                 raise ValueError('sigma does not match number of rows in I')
-            A = A / self.sigma[:,None]
+            if len(self.sigma.shape) == 1 or self.sigma.shape[1] == 1:
+                A = np.diag(1/self.sigma) @ A
+            else:
+                A = np.diag(1/np.mean(self.sigma[:,cols],1)) @ A
         Us, ss, Vst = np.linalg.svd(A, full_matrices=False)
-        k = min(k, len(ss))
-        Us = Us[:,:k]
-        ss = ss[:k]
-        Vst = Vst[:k,:]
+        assert ss.shape[0] == Vst.shape[0]
+        r = min(k, ss.shape[0])
+        Us, ss, Vst = Us[:,:r], ss[:r], Vst[:r,:]
         C_saxs = np.diag(ss) @ Vst
-        Uuv, suv, Vuv = self.uv_svd(k=k, cols=cols)
+        Uuv, suv, Vuv = self.uv_svd(k=r, cols=cols)
         C_uv = Vuv
-        scale = np.zeros(k)
-        for i in range(k):
+        scale = np.zeros(r)
+        for i in range(r):
             x = C_uv[i]
             y = C_saxs[i]
             scale[i] = np.dot(x,y) / np.dot(x,x)
@@ -198,7 +200,8 @@ class bioEFA(efa):
             "scale": scale,
             "uv_spectra": Uuv,
             "uv_singular": suv,
-            "cols": cols
+            "cols": cols,
+            "k": r
         }
 
     def evolving_uv_factors(self, k, direction="forward", skip=1):
