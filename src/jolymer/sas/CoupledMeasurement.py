@@ -443,29 +443,47 @@ class CoupledMeasurement:
     def interpolate_uv(self):
         if self._alignment is None:
             raise RuntimeError("UV–SAXS alignment not computed")
-
         shift = self._alignment["shift"]
         scale = self._alignment["scale"]
         uv_time = scale*(self.uv.df.time) + shift
         uv_abs = self.uv.df['Abs']
-
         interp = interp1d(
             uv_time,
             uv_abs,
             bounds_error=False,
             fill_value=0.0,
         )
-
         saxs_time = np.array([m.time for m in self.saxs_list])
         uv_on_saxs = interp(saxs_time)
-
         self._uv_on_saxs = pd.DataFrame({
             "frame": self._x,
             "time": saxs_time,
             "Abs": uv_on_saxs,
         })
-
         return self._uv_on_saxs
+
+    def interpolate_uv_matrix(self, uv_wide, dt=0.946, mintime=None, maxtime=None):
+        if self._alignment is None:
+            raise RuntimeError("UV–SAXS alignment not computed")
+        shift = self._alignment["shift"]
+        scale = self._alignment["scale"]
+        wl = uv_wide.iloc[:,0].values
+        abs_matrix = uv_wide.iloc[:,1:].values
+        ntime = abs_matrix.shape[1]
+        raw_time = np.linspace(0, ntime, ntime) * dt
+        mask = np.ones(ntime, dtype=bool)
+        if mintime is not None:
+            mask &= raw_time > mintime
+        if maxtime is not None:
+            mask &= raw_time < maxtime
+        raw_time = raw_time[mask]
+        abs_matrix = abs_matrix[:,mask]
+        uv_time = scale*raw_time + shift
+        interp = interp1d(uv_time, abs_matrix, axis=1, bounds_error=False, fill_value=0.0)
+        saxs_time = np.array([m.time for m in self.saxs_list])
+        uv_on_saxs = interp(saxs_time)
+        cols = ["wl"] + [f"Abs{i}" for i in range(len(saxs_time))]
+        return pd.DataFrame(np.column_stack([wl, uv_on_saxs]), columns=cols)
 
     def to_regals(self):
         dfX = self.get_saxs_scalar(self._alignment["saxs_kind"],

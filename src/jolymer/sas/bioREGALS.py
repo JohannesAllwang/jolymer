@@ -134,17 +134,14 @@ class bioREGALS(regals):
         self.err_waxs = err_waxs
         self.onlineUV = onlineUV
 
-import numpy as np
-from scipy.optimize import nnls
-
-
 class bioEFA(efa):
-
     def __init__(self, I, sigma=np.array([]), uv=None):
         super().__init__(I, sigma)
         if uv is not None:
             self.wl = uv.iloc[:,0].values
             self.uv = uv.iloc[:,1:].values
+            if self.uv.shape[1] != self.Nc:
+                raise ValueError('uv frame count does not match I column count')
         else:
             self.wl = np.array([])
             self.uv = np.array([])
@@ -158,100 +155,64 @@ class bioEFA(efa):
         return self.uv.shape[1]
 
     def select_uv_range(self, wl_min=220, wl_max=300):
-        mask = np.logical_and(
-            self.wl >= wl_min,
-            self.wl <= wl_max
-        )
+        mask = np.logical_and(self.wl >= wl_min, self.wl <= wl_max)
         self.wl = self.wl[mask]
         self.uv = self.uv[mask,:]
 
-    def uv_svd(self, k=None):
+    def uv_svd(self, k=None, cols=None):
+        if cols is None:
+            cols = np.arange(self.Nframes)
+        B = self.uv[:,cols]
         if k is None:
-            k = min(self.uv.shape)
-        U,s,Vt = np.linalg.svd(
-            self.uv,
-            full_matrices=False
-        )
-        return (
-            U[:,:k],
-            s[:k],
-            Vt[:k,:]
-        )
+            k = min(B.shape)
+        U, s, Vt = np.linalg.svd(B, full_matrices=False)
+        k = min(k, len(s))
+        return U[:,:k], s[:k], Vt[:k,:]
 
-    def constrained_factors(self, k,
-                            uv_threshold=None):
-        """
-        Find SAXS factors constrained by UV.
-        Returns:
-            F(q,k)     scattering profiles
-            C(k,t)     concentration profiles
-            scale(k)   UV->SAXS scaling
-        """
-        A = self.I.copy()
+    def constrained_factors(self, k, cols=None):
+        if cols is None:
+            cols = np.arange(self.Nc)
+        A = self.I[:,cols]
         if len(self.sigma) != 0:
+            if self.sigma.shape[0] != self.Nr:
+                raise ValueError('sigma does not match number of rows in I')
             A = A / self.sigma[:,None]
-        Us, ss, Vst = np.linalg.svd(
-            A,
-            full_matrices=False
-        )
-        Us = Us[:, :k]
+        Us, ss, Vst = np.linalg.svd(A, full_matrices=False)
+        k = min(k, len(ss))
+        Us = Us[:,:k]
         ss = ss[:k]
         Vst = Vst[:k,:]
         C_saxs = np.diag(ss) @ Vst
-        Uuv, suv, Vuv = self.uv_svd(k=k)
-        C_uv = Vuv[:k,:]
-        R = np.linalg.lstsq(
-            C_uv.T,
-            C_saxs.T,
-            rcond=None
-        )[0].T
-        C = R @ C_uv
+        Uuv, suv, Vuv = self.uv_svd(k=k, cols=cols)
+        C_uv = Vuv
         scale = np.zeros(k)
         for i in range(k):
-            x = C_uv[i,:]
-            y = C[i,:]
-            scale[i] = (
-                np.dot(x,y) /
-                np.dot(x,x)
-            )
+            x = C_uv[i]
+            y = C_saxs[i]
+            scale[i] = np.dot(x,y) / np.dot(x,x)
         C = np.diag(scale) @ C_uv
-        F = Us @ np.linalg.pinv(
-            R @ np.diag(scale)
-        )
+        F = Us
         return {
             "F": F,
             "C": C,
             "scale": scale,
             "uv_spectra": Uuv,
-            "uv_singular": suv
+            "uv_singular": suv,
+            "cols": cols
         }
 
-    def evolving_uv_factors(self,
-                            k,
-                            direction="forward",
-                            skip=1):
-        """
-        EFA but with UV constrained factors.
-        """
+    def evolving_uv_factors(self, k, direction="forward", skip=1):
         ncols = self.Nc
-        factors = np.full(
-            (k,ncols),
-            np.nan
-        )
+        factors = np.full((k,ncols), np.nan)
         for j in range(0,ncols,skip):
-            if direction.lower()=="forward":
-                cols=np.arange(j+1)
-            elif direction.lower()=="reverse":
-                cols=np.arange(j,ncols)
+            if direction.lower() == "forward":
+                cols = np.arange(j+1)
+            elif direction.lower() == "reverse":
+                cols = np.arange(j,ncols)
             else:
-                raise ValueError(
-                    "direction must be forward/reverse"
-                )
-            result=self.constrained_factors(
-                k
-            )
-            factors[:,j]=np.linalg.norm(
-                result["C"][:,cols],
-                axis=1
-            )
+                raise ValueError("direction must be forward/reverse")
+            if len(cols) < k:
+                continue
+            result = self.constrained_factors(k, cols=cols)
+            factors[:,j] = np.linalg.norm(result["C"], axis=1)
         return factors
