@@ -86,11 +86,11 @@ class AlignSAXS_WAXS:
         outdict['qw_ov'] = q_w[mask_w]
         outdict['Iw_ov'] = I_w[mask_w, :]
         interp = interp1d(q_s, I_s, axis=0, bounds_error=False,
-                          fill_value=np.nan)
+                          fill_value=np.nan, kind='cubic')
         Is_ov = interp(outdict['qw_ov'])
         sigma_w_ov = sigma_w[mask_w, :]
         interpw = interp1d(q_s, sigma_s, axis=0, bounds_error=False,
-                           fill_value=np.nan)
+                           fill_value=np.nan, kind='cubic')
         sigma_s_ov = interpw(outdict['qw_ov'])
         outdict['Is_ov'] = Is_ov
         outdict['sigma_s_ov'] = sigma_s_ov
@@ -452,6 +452,7 @@ class CoupledMeasurement:
             uv_abs,
             bounds_error=False,
             fill_value=0.0,
+            kind='cubic',
         )
         saxs_time = np.array([m.time for m in self.saxs_list])
         uv_on_saxs = interp(saxs_time)
@@ -479,7 +480,8 @@ class CoupledMeasurement:
         raw_time = raw_time[mask]
         abs_matrix = abs_matrix[:,mask]
         uv_time = scale*raw_time + shift
-        interp = interp1d(uv_time, abs_matrix, axis=1, bounds_error=False, fill_value=0.0)
+        interp = interp1d(uv_time, abs_matrix, axis=1, bounds_error=False, fill_value=0.0,
+                          kind='cubic')
         saxs_time = np.array([m.time for m in self.saxs_list])
         uv_on_saxs = interp(saxs_time)
         cols = ["wl"] + [f"Abs{i}" for i in range(len(saxs_time))]
@@ -581,7 +583,7 @@ class CoupledMeasurement:
             f = interp1d(
                 t_uv_warped,
                 y_uv,
-                kind="linear",
+                kind="cubic",
                 # bounds_error=True,
                 bounds_error=False,
                 fill_value=0,
