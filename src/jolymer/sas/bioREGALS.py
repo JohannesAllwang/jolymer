@@ -43,8 +43,8 @@ class bioMIXTURE(mixture):
                          lambda_profile=np.array([]),
                          u_concentration=[],
                          u_profile=[])
-        self.uv_meas = uv_meas           # array length Nx (frames)
-        self.uv_err = uv_err             # error or weight
+        self.uv_meas = uv_meas
+        self.uv_err = uv_err
         self.uv_weight = uv_weight
 
     def concentration_problem(self, I, err, calc_Ab=True):
@@ -58,7 +58,6 @@ class bioMIXTURE(mixture):
             AA = sout
         Abs = self.uv_meas                    # shape (Nt,)
         uv_scale = [comp.uv_scale for comp in self.components]
-        # --- UV normal-equation contribution ---
         w = 1 / np.mean(err,1)
         y = self.profiles
         y = w[:,np.newaxis] * y
@@ -78,8 +77,6 @@ class bioMIXTURE(mixture):
                 + self.uv_weight * uv_scale[k] * (A[k].T @ Abs)
                 for k in range(self.Nc)
             ]
-
-        # Assemble blocks
         AA = sp.vstack(tuple(sp.hstack(tuple(row)) for row in AA))
         if calc_Ab:
             Ab = np.hstack(tuple(Ab))
