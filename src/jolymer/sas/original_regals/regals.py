@@ -14,107 +14,78 @@ class regals:
         self.err = err
 
     def auto_estimate_lambda(self, mix):
-
         mix = deepcopy(mix)
-
         mix.lambda_profile = mix.estimate_profile_lambda(self.err)
         mix.lambda_concentration = mix.estimate_concentration_lambda(self.err)
-
         new_mix = self.step(mix)[0] # take one step and re-estimate
-
         mix.lambda_profile = new_mix.estimate_profile_lambda(self.err)
         mix.lambda_concentration = new_mix.estimate_concentration_lambda(self.err)
 
         return mix
 
     def fit_concentrations(self, mix):
-
         mix = deepcopy(mix)
-
         H = mix.H_concentration
         [AA, Ab] = mix.concentration_problem(self.I, self.err)
-
         u = spsolve(AA + H, Ab)
-
         u = np.split(u, np.cumsum(mix.k_concentration)[:-1])
-
         mix.u_concentration = u
         return mix
 
     def fit_profiles(self, mix):
-
         mix = deepcopy(mix)
-
         H = mix.H_profile
         [AA, Ab] = mix.profile_problem(self.I, self.err)
-
+        M = AA + H
         u = spsolve(AA + H, Ab)
-
         u = np.split(u, np.cumsum(mix.k_profile)[:-1])
-
         mix.u_profile = u
         n = mix.norm_profile
         u = [uj / nj if nj != 0 else uj for uj, nj in zip(u, n)]
-
         mix.u_profile = u
         return mix
 
     def step(self, mix):
-
         new_mix = self.fit_concentrations(self.fit_profiles(mix));
-
         resid = (self.I - new_mix.I_reg) / self.err
-
         params = {}
         params['x2'] = np.mean(resid ** 2)
         params['delta_concentration'] = np.sum(np.abs(new_mix.concentrations - mix.concentrations),0)
         params['delta_profile'] = np.sum(np.abs(new_mix.profiles - mix.profiles),0)
         params['delta_u_concentration'] = np.array([np.sum(np.abs(nupk - upk)) for nupk, upk in zip(new_mix.u_concentration, mix.u_concentration)])
         params['delta_u_profile'] = np.array([np.sum(np.abs(nupr - upr)) for nupr, upr in zip(new_mix.u_profile, mix.u_profile)])
-
         return [new_mix, params, resid]
 
     def run(self, mix, stop_fun = None, update_fun = None):
-
         if stop_fun is None:
             stop_fun = lambda num_iter, params: [num_iter >= 10, 'max_iter']
-
         if update_fun is None:
             update_fun = lambda num_iter, new_mix, params, resid: True
-
         num_iter = 0
         while True:
             num_iter += 1
             [mix, params, resid] = self.step(mix)
-
             update_fun(num_iter, mix, params, resid)
-
             [if_exit, exit_cond] = stop_fun(num_iter, params)
             if if_exit:
                 break
-
         return [mix, params, resid, exit_cond]
-
 
 
 class mixture:
 
-    def __init__(self, components, lambda_concentration = np.array([]), lambda_profile = np.array([]), u_concentration = [], u_profile = []):
+    def __init__(self, components, lambda_concentration = np.array([]), lambda_profile=np.array([]), u_concentration=[], u_profile=[]):
         self.components = components
         self.lambda_concentration = lambda_concentration
         self.lambda_profile = lambda_profile
         self.u_concentration = u_concentration
         self.u_profile = u_profile
-
         if len(self.u_concentration) == 0:
             self.u_concentration = [comp.concentration.u0 for comp in components]
-
         if len(self.u_profile) == 0:
             self.u_profile = [comp.profile.u0 for comp in components]
-
         if len(self.lambda_concentration) == 0:
             self.lambda_concentration = np.zeros(self.Nc)
-
         if len(self.lambda_profile) == 0:
             self.lambda_profile = np.zeros(self.Nc)
 
@@ -149,7 +120,9 @@ class mixture:
             for j in range(self.Nc):
                 C = self.components[j].concentration
                 if C.reg_type == 'simple':
-                    ng[j] = np.Inf
+                    ng[j] = np.inf
+                elif C.reg_type == 'solvent':
+                    ng[j] = np.inf
                 elif C.reg_type == 'smooth':
                     ng[j] = 0.8 * C.maxinfo
                 else:
@@ -176,7 +149,7 @@ class mixture:
             for j in range(self.Nc):
                 P = self.components[j].profile
                 if P.reg_type == 'simple':
-                    ng[j] = np.Inf # no regularization
+                    ng[j] = np.inf # no regularization
                 elif P.reg_type == 'smooth':
                     ng[j] = 0.9 * P.maxinfo # just a little smoothing
                 elif P.reg_type == 'realspace':
@@ -336,6 +309,7 @@ class concentration_class:
         _regularizer_classes = {
             'simple'    : concentration_simple,
             'smooth'    : concentration_smooth,
+            'solvent'    : concentration_solvent,
             }
 
         self.reg_type = reg_type.lower()
@@ -573,6 +547,7 @@ class profile_class:
             'simple'    : profile_simple,
             'smooth'    : profile_smooth,
             'realspace' : profile_real_space,
+            'solvent' : profile_solvent,
             }
 
         self.reg_type = reg_type.lower()
@@ -847,3 +822,50 @@ class profile_real_space:
         if self.is_zero_at_r0:
             weight = weight[1:]
         return np.sum(weight * u)
+
+
+class profile_solvent(profile_simple):
+
+    def __init__(self, q, qcut=1):
+        self.q = q
+        self.qcut = qcut
+
+    @property
+    def k(self):
+        return 1 + np.sum(self.q >= self.qcut)
+
+    @property
+    def u0(self):
+        return np.ones(self.k)
+
+    @property
+    def L(self):
+        return sp.eye(self.k)
+
+    @property
+    def F(self):
+        rows = []
+        cols = []
+        data = []
+        high = 1
+        for i, q in enumerate(self.q):
+            if q < self.qcut:
+                rows.append(i)
+                cols.append(0)
+                data.append(1.0)
+            else:
+                rows.append(i)
+                cols.append(high)
+                data.append(1.0)
+                high += 1
+        return sp.csr_matrix((data, (rows, cols)),
+                             shape=(self.Nq, self.k))
+
+class concentration_solvent(concentration_simple):
+    @property
+    def w(self):
+        return self.x
+
+    @property
+    def Nw(self):
+        return len(self.x)
