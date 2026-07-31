@@ -165,7 +165,7 @@ class SAXS_Measurement(Measurement):
                  dtype=np.float64)
         return df
 
-    def pyfai_integrate1d(self):
+    def pyfai_integrate1d(self, mask=None):
         masked_image = self.get_masked()
         nbins=200.
         sdd = self.sasImage.detector_distance[0]
@@ -185,17 +185,42 @@ class SAXS_Measurement(Measurement):
         df = pd.DataFrame(dict)
         return df
 
-    def show_sasImage(self, filename=None, ax=None, vmin=1,
-                      vmax=1000, frame=None, mask_above=10000, **kwargs):
+    def show_sasImage(
+        self,
+        filename=None,
+        ax=None,
+        vmin=1,
+        vmax=1000,
+        frame=None,
+        mask=None,
+        mask_above=10000,
+        reject_outliers=False,
+        outlier_sigma=8,
+        **kwargs,
+    ):
         if ax is None:
             fig, ax = plt.subplots()
-        img = self.get_sasImage(filename=filename, frame=frame)
-        # img = np.ma.masked_less(img, 200)
-        img = np.ma.masked_greater(img, mask_above)
-        cmap = cm.inferno
-        cmap.set_bad(color='red')  # Set masked values to red
-        im = ax.matshow(img, cmap=cmap, origin='lower',
-                        norm=LogNorm(vmin=vmin, vmax=vmax), **kwargs)
+        data = self.get_sasImage(filename=filename, frame=frame)
+        combined_mask = np.zeros(data.shape, dtype=bool)
+        if mask is not None:
+            combined_mask |= np.asarray(mask, dtype=bool)
+        if mask_above is not None:
+            combined_mask |= data > mask_above
+        if reject_outliers:
+            med = np.median(data[~combined_mask])
+            mad = np.median(np.abs(data[~combined_mask] - med))
+            if mad > 0:
+                combined_mask |= np.abs(data - med) > (outlier_sigma * mad)
+        img = np.ma.array(data, mask=combined_mask)
+        cmap = cm.plasma.copy()
+        cmap.set_bad("red")
+        im = ax.matshow(
+            img,
+            cmap=cmap,
+            origin="lower",
+            norm=LogNorm(vmin=vmin, vmax=vmax),
+            **kwargs,
+        )
         ax.grid(False)
         return _colorbar(im)
 

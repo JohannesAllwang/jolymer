@@ -10,9 +10,12 @@ from .SAXS_Measurement import SAXS_Measurement
 
 class biosaxs13A9M(SAXS_Measurement):
 
-    def get_poni_filename(self, filepath=None):
+    def get_poni_filename(self, filepath=None, M=9):
         parent_dir = Path(self.path).parent
-        outpath = Path(parent_dir, '1M.poni')
+        if M==9:
+            outpath = Path(parent_dir, '9Mjolymer.poni')
+        elif M==1:
+            outpath = Path(parent_dir, '1M.poni')
         return outpath
 
     def get_rigi_filename(self, filepath=None, buffer=False):
@@ -138,51 +141,53 @@ class biosaxs13A9M(SAXS_Measurement):
         return length
 
     def integrate1d(self, filename=None, waxs=False, frame=None,
-                    buffer=False, npt=200,
+                    buffer=False, npt=200, mask=None,
                     normalize_by='civi'):
         import pyFAI
         from pyFAI.azimuthalIntegrator import AzimuthalIntegrator
-
-        if not frame is None:
-            frame += 1 # because it usually starts to count at 1
+        if frame is not None:
+            frame += 1
         ai = AzimuthalIntegrator()
-        ai.load(self.get_poni_filename())
-
+        M = 1 if waxs else 9
+        ai.load(self.get_poni_filename(M=M))
+        print(ai.getFit2D())
         path = self.get_9M_filename(buffer=buffer)
         sasImage = self.get_sasImage(path, frame=frame)
         if waxs:
             path = self.get_1M_filename(buffer=buffer)
             sasImage = self.get_sasImage(path, frame=frame)
-        data = sasImage.data
-        med = np.median(data)
-        mad = np.median(np.abs(data - med))
-# robust threshold
-        mask = np.abs(data - med) > (8 * mad)
-        data = np.ma.array(data, mask=mask)
-        # data = np.ma.masked_greater(sasImage.data, 100000)
-        # print('data is masked')
+        data = np.asarray(sasImage.data)
+        if mask is None:
+            mask = np.zeros(data.shape, dtype=bool)
+        else:
+            mask = np.asarray(mask, dtype=bool).copy()
+        med = np.median(data[~mask])
+        mad = np.median(np.abs(data[~mask] - med))
+        if mad > 0:
+            mask |= np.abs(data - med) > (8 * mad)
         q, I, errI = ai.integrate1d(data, npt=npt,
-                                  mask=data.mask,
-                                  error_model='poisson',
-                                  correctSolidAngle=True)
+                                    mask=mask,
+                                    error_model='poisson',
+                                    correctSolidAngle=True)
         dat_header = self.get_dat_header()
         T = float(dat_header['Sample Transmission coefficient'])
         if buffer:
             T = float(dat_header['Empty Cell Transmission coefficient'])
-        count_time = 1 # wile using rigi to normalize
+        count_time = 1
         if normalize_by == 'time':
             count_time = self.get_count_time(filepath=path)
         I = I / T / count_time
-        errI = errI/T/count_time
+        errI = errI / T / count_time
         df = pd.DataFrame({'q': q, 'I_sample': I, 'err_I_sample': errI})
         return df
 
     def integrade_subtract(self, filename=None, filename_buffer=None, waxs=False, frame=None,
-                           npt=200, adjustTMbuffer=1.0, normalize_by='civi'):
+                           npt=200, adjustTMbuffer=1.0, normalize_by='civi', mask=None):
         df_sample = self.integrate1d(filename=filename, waxs=waxs, frame=frame,
-                                     npt=npt, normalize_by=normalize_by)
+                                     npt=npt, normalize_by=normalize_by, mask=mask)
         df_buffer = self.integrate1d(filename=filename, waxs=waxs,
-                                     npt=npt, buffer=True, normalize_by=normalize_by)
+                                     npt=npt, buffer=True, normalize_by=normalize_by,
+                                     mask=mask)
         if normalize_by == 'time':
             rigi_sample = 100000
             rigi_buffer = 100000
@@ -223,29 +228,66 @@ class biosaxs13A9M(SAXS_Measurement):
         # df['err_I'] = df.err_I_sample + df.err_I_buffer
         return df
 
-    def psaxs_to_poni(psaxs_file, poni_file,
+    def psaxs_to_poni(self, psaxs_file=None, poni_filename='9Mjolymer.poni',
                   detector="Eiger9M",
                   pixel_size=75e-6):
+        if psaxs_file is None:
+            psaxs_file = self.get_psaxs_file()
+        poni_file = Path(self.path).parent / poni_filename
         with open(psaxs_file, "r") as f:
             lines = [l.strip() for l in f if l.strip()]
-        energy_keV = float(lines[3])
-        beam_x, beam_y = map(float, lines[8].split())
-        distance_mm = float(lines[9])
+        energy_keV = float(lines[3].split()[0])
+        beam_x, beam_y = map(float, lines[8].split('Beam Center')[0].split())
+        distance_mm = float(lines[9].split("Sample-to")[0].split()[0])
         distance = distance_mm * 1e-3
         poni1 = beam_y * pixel_size
-        poni2 = -beam_x * pixel_size
+        poni2 = beam_x * pixel_size
         wavelength = 12.39842 / energy_keV * 1e-10
         with open(poni_file, "w") as f:
             f.write(
-                f"""# Converted from TPS pSAXS calibration
-                poni_version: 2
-                Detector: {detector}
-                Detector_config: {{}}
-                Distance: {distance}
-                Poni1: {poni1}
-                Poni2: {poni2}
-                Rot1: 0.0
-                Rot2: 0.0
-                Rot3: 0.0
-                Wavelength: {wavelength}
-                """)
+f"""# Converted from TPS pSAXS calibration
+poni_version: 2
+Detector: {detector}
+Detector_config: {{}}
+Distance: {distance}
+Poni1: {poni1}
+Poni2: {poni2}
+Rot1: 0.0
+Rot2: 0.0
+Rot3: 0.0
+Wavelength: {wavelength}
+""")
+
+    def get_psaxs_file(self):
+        return Path(self.path).parent / 'pSAXSpar.txt'
+
+    def get_reject_mask(self, filename='REJECT.dat', shape=None):
+        """
+        Convert TPS pSAXS REJECT.dat to pyFAI boolean mask.
+        Parameters
+        ----------
+        filename : str
+            REJECT.dat file
+        shape : tuple
+            Detector image shape (ny, nx)
+        Returns
+        -------
+        mask : ndarray(bool)
+            True = masked pixel
+        """
+        if shape is None:
+            path = self.get_9M_filename(buffer=False)
+            shape = self.get_sasImage(path).shape
+            print('shape', shape)
+        mask = np.zeros(shape, dtype=bool)
+        reject_path = Path(self.path).parent / filename
+        with open(reject_path) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                x, y, value = line.split()
+                x = int(float(x))
+                y = int(float(y))
+                if 0 <= y < shape[0] and 0 <= x < shape[1]:
+                    mask[y, x] = True
+        return mask

@@ -128,9 +128,7 @@ class mixture:
                 else:
                     raise ValueError('unexpected concentration type for lambda estimation')
             print('estimating concentration lambda with ng = %s'%(np.array2string(ng)))
-
         AA = self.concentration_problem(np.zeros((self.Nq,self.Nx)),err,False).todense()
-
         split_pos = np.cumsum(self.k_concentration)[:-1]
         AA = [np.hsplit(AAi, split_pos) for AAi in np.vsplit(AA, split_pos)]
 
