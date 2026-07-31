@@ -223,5 +223,29 @@ class biosaxs13A9M(SAXS_Measurement):
         # df['err_I'] = df.err_I_sample + df.err_I_buffer
         return df
 
-
-
+    def psaxs_to_poni(psaxs_file, poni_file,
+                  detector="Eiger9M",
+                  pixel_size=75e-6):
+        with open(psaxs_file, "r") as f:
+            lines = [l.strip() for l in f if l.strip()]
+        energy_keV = float(lines[3])
+        beam_x, beam_y = map(float, lines[8].split())
+        distance_mm = float(lines[9])
+        distance = distance_mm * 1e-3
+        poni1 = beam_y * pixel_size
+        poni2 = -beam_x * pixel_size
+        wavelength = 12.39842 / energy_keV * 1e-10
+        with open(poni_file, "w") as f:
+            f.write(
+                f"""# Converted from TPS pSAXS calibration
+                poni_version: 2
+                Detector: {detector}
+                Detector_config: {{}}
+                Distance: {distance}
+                Poni1: {poni1}
+                Poni2: {poni2}
+                Rot1: 0.0
+                Rot2: 0.0
+                Rot3: 0.0
+                Wavelength: {wavelength}
+                """)
