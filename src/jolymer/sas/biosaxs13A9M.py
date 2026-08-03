@@ -150,7 +150,6 @@ class biosaxs13A9M(SAXS_Measurement):
         ai = AzimuthalIntegrator()
         M = 1 if waxs else 9
         ai.load(self.get_poni_filename(M=M))
-        print(ai.getFit2D())
         path = self.get_9M_filename(buffer=buffer)
         sasImage = self.get_sasImage(path, frame=frame)
         if waxs:
@@ -158,16 +157,19 @@ class biosaxs13A9M(SAXS_Measurement):
             sasImage = self.get_sasImage(path, frame=frame)
         data = np.asarray(sasImage.data)
         if mask is None:
-            mask = np.zeros(data.shape, dtype=bool)
+            # mask = np.zeros(data.shape, dtype=bool)
+            mask = np.zeros(data.shape, dtype=np.int8)
         else:
-            mask = np.asarray(mask, dtype=bool).copy()
-        med = np.median(data[~mask])
-        mad = np.median(np.abs(data[~mask] - med))
+            mask = mask.copy()
+        med = np.median(data)
+        mad = np.median(np.abs(data - med))
+        # if mad > 0:
         if mad > 0:
-            mask |= np.abs(data - med) > (8 * mad)
+            mask |= np.abs(data - med) > (300 * mad)
         q, I, errI = ai.integrate1d(data, npt=npt,
                                     mask=mask,
                                     error_model='poisson',
+                                    method=("splitpixel", "csr", "cython"),
                                     correctSolidAngle=True)
         dat_header = self.get_dat_header()
         T = float(dat_header['Sample Transmission coefficient'])
@@ -290,4 +292,4 @@ Wavelength: {wavelength}
                 y = int(float(y))
                 if 0 <= y < shape[0] and 0 <= x < shape[1]:
                     mask[y, x] = True
-        return mask
+        return mask.astype(np.int8)
