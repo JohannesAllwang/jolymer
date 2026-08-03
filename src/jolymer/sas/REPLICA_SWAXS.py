@@ -606,3 +606,171 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
             ax.set_ylabel(parameters[j])
         return fig
 
+    @staticmethod
+    def get_weights(x, log_w0):
+        """Softmax parametrization: guarantees w > 0 and sum(w) = 1."""
+        z = log_w0 + x
+        z = z - z.max()
+        w = np.exp(z)
+        w /= w.sum()
+        return w
+
+
+    def maxent_reweight(self, i_exp, calc_curves, w0=None, sigma=None, theta=1.0,
+                         maxiter=5000, tol=1e-14):
+        """
+        Parameters
+        ----------
+        i_exp : (n_q,) array
+            Target/experimental curve.
+        calc_curves : (n_bins, n_q) array
+            Calculated curve per bin, on the same q-grid as i_exp.
+        w0 : (n_bins,) array, optional
+            Prior weights. Defaults to uniform (1/n_bins each). If your bins
+            came from unevenly populated sampling (not flat/umbrella sampling),
+            pass the actual population fractions instead of uniform.
+        sigma : (n_q,) array, optional
+            Experimental uncertainty per q-point. Defaults to ones (unweighted
+            least squares in chi2 terms).
+        theta : float
+            Entropy regularization strength. Larger = closer to prior.
+        Returns
+        -------
+        w_opt : (n_bins,) array, posterior weights
+        n_eff : float, effective number of bins = exp(S_rel)
+        chi2  : float, reduced chi2 of the reweighted fit
+        res   : scipy OptimizeResult
+        """
+        calc_curves = np.asarray(calc_curves, dtype=float)
+        i_exp = np.asarray(i_exp, dtype=float)
+        n_bins, n_q = calc_curves.shape
+        if w0 is None:
+            w0 = np.ones(n_bins) / n_bins
+        else:
+            w0 = np.asarray(w0, dtype=float)
+            w0 = w0 / w0.sum()
+        if sigma is None:
+            sigma = np.ones(n_q)
+        else:
+            sigma = np.asarray(sigma, dtype=float)
+        log_w0 = np.log(w0)
+        def objective(x):
+            w = get_weights(x, log_w0)
+            calc_avg = w @ calc_curves
+            chi2 = np.sum(((i_exp - calc_avg) / sigma) ** 2) / n_q
+            # avoid log(0) for numerically-zero weights
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ratio = np.where(w > 0, w / w0, 1.0)
+                s_rel = -np.sum(w * np.log(ratio))
+            return chi2 - theta * s_rel
+        x0 = np.zeros(n_bins)
+        res = minimize(objective, x0, method="L-BFGS-B",
+                        options={"maxiter": maxiter, "ftol": tol})
+        w_opt = get_weights(res.x, log_w0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = np.where(w_opt > 0, w_opt / w0, 1.0)
+            s_rel = -np.sum(w_opt * np.log(ratio))
+        n_eff = np.exp(s_rel)
+        calc_avg = w_opt @ calc_curves
+        chi2 = np.sum(((i_exp - calc_avg) / sigma) ** 2) / n_q
+        return w_opt, n_eff, chi2, res
+
+
+    def theta_scan(i_exp, calc_curves, thetas, w0=None, sigma=None):
+        """
+        Scan theta and return chi2, S_rel, n_eff for each value, so you can pick
+        theta at the 'elbow' of the chi2 vs S_rel L-curve (standard BME practice:
+        don't just pick the theta with lowest chi2, that overfits).
+        """
+        rows = []
+        for theta in thetas:
+            w_opt, n_eff, chi2, _ = maxent_reweight(
+                i_exp, calc_curves, w0=w0, sigma=sigma, theta=theta
+            )
+            n_bins = calc_curves.shape[0]
+            w0_arr = w0 if w0 is not None else np.ones(n_bins) / n_bins
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ratio = np.where(w_opt > 0, w_opt / w0_arr, 1.0)
+                s_rel = -np.sum(w_opt * np.log(ratio))
+            rows.append({"theta": theta, "chi2": chi2, "S_rel": s_rel, "n_eff": n_eff})
+        return pd.DataFrame(rows)
+
+    def build_reweighting_inputs(self, parameters):
+        """
+        Turns self.get_bins_final(parameters) + self.gss[0].get_data() into the
+        arrays maxent_reweight() needs.
+        Assumes each per-bin dataframe (outdict['dfs'][k]) and the target
+        dataframe share column names q_col / i_col (and optionally sigma_col).
+        If bins are not on the exact same q-grid as the target (they may not be,
+        since dfgs comes from a separate GROMACS rerun), each curve is linearly
+        interpolated onto the target's q-grid.
+        """
+        outdict = self.get_bins_final(parameters)
+        target_df = self.gss[0].get_data()
+        q_target = target_df[q_col].to_numpy()
+        i_target = target_df[i_col].to_numpy()
+        if sigma_col in target_df.columns:
+            sigma = target_df[sigma_col].to_numpy()
+        else:
+            sigma = np.ones_like(i_target)
+        calc_curves = []
+        for dfgs in outdict["dfs"]:
+            q_bin = dfgs[q_col].to_numpy()
+            i_bin = dfgs[i_col].to_numpy()
+            i_interp = np.interp(q_target, q_bin, i_bin)
+            calc_curves.append(i_interp)
+        calc_curves = np.array(calc_curves)
+        par_values = np.array(outdict["par_values"], dtype=float)  # (n_bins, n_params)
+        bin_names = outdict["bins"]
+        return {
+            "q_target": q_target,
+            "i_target": i_target,
+            "sigma": sigma,
+            "calc_curves": calc_curves,
+            "par_values": par_values,
+            "bin_names": bin_names,
+            "parameters": parameters,
+        }
+
+
+    def reweight_parameters(self, parameters, theta=1.0, w0=None):
+        """
+        End-to-end: build inputs, reweight, and return a tidy DataFrame with
+        prior vs. posterior weights and per-parameter reweighted averages.
+        Example
+        -------
+        result, w_opt, n_eff = reweight_parameters(self, ['Ree', 'Rg', 'fbs'], theta=1.0)
+        print(result['summary'])
+        """
+        inputs = self.build_reweighting_inputs(self, parameters)
+        n_bins = inputs["calc_curves"].shape[0]
+        if w0 is None:
+            w0 = np.ones(n_bins) / n_bins  # assume evenly sampled bins by default
+        w_opt, n_eff, chi2, res = maxent_reweight(
+            inputs["i_target"], inputs["calc_curves"],
+            w0=w0, sigma=inputs["sigma"], theta=theta,
+        )
+        per_bin = pd.DataFrame(inputs["par_values"], columns=parameters)
+        per_bin["bin"] = inputs["bin_names"]
+        per_bin["w0"] = w0
+        per_bin["w_opt"] = w_opt
+        prior_avg = per_bin[parameters].mul(w0, axis=0).sum()
+        post_avg = per_bin[parameters].mul(w_opt, axis=0).sum()
+        summary = pd.DataFrame({"prior_avg": prior_avg, "reweighted_avg": post_avg})
+        result = {
+            "per_bin": per_bin,
+            "summary": summary,
+            "n_eff": n_eff,
+            "chi2": chi2,
+            "theta": theta,
+        }
+        return result, w_opt, n_eff
+
+        def run_maxEnt(self):
+            n_bins, n_q = 20, 50
+            q = np.linspace(0.01, 0.5, n_q)
+            true_w = rng.dirichlet(np.ones(n_bins))
+            curves = rng.normal(loc=1.0, scale=0.2, size=(n_bins, n_q)) * np.exp(-5 * q)
+            w_opt, n_eff, chi2, res = self.maxent_reweight(i_exp, curves, theta=0.1)
+            print("converged:", res.success, "chi2:", chi2, "n_eff:", n_eff)
+
