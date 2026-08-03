@@ -1135,8 +1135,11 @@ class GROMACS_SWAXS(SAXS_Measurement):
         outpath = Path(f'{self.NAME}_{analysis_name}')
         return outpath
 
-    def run_analysis(self, analysis_name, *args, **kwargs):
-        An = _analysis_dict[analysis_name]()
+    def run_analysis(self, analysis, *args, **kwargs):
+        if isinstance(analysis, str):
+            An = _analysis_dict[analysis_name]()
+        else:
+            An = analysis
         if An.nosol:
             self.to_nosol()
         else:
@@ -1432,3 +1435,54 @@ _analysis_dict = {
         'fbs': FbsAnalysis,
         'radius': RadiusAnalysis
         }
+
+@dataclass
+class DomainAngleAnalysis(Analysis):
+
+    pars: list[str] = field(default_factory=lambda: [
+        "time",
+        "frame",
+        "angle",
+    ])
+    df_pars: list[str] = field(default_factory=list)
+    name: str = "domain_angle"
+    # define the three domains as selection strings, e.g.
+    # domain1_sel = "resid 1:195"   (HSA domain I)
+    # domain2_sel = "resid 196:383" (HSA domain II, the hinge/reference domain)
+    # domain3_sel = "resid 384:585" (HSA domain III)
+    domain1_sel: str = ""
+    domain2_sel: str = ""
+    domain3_sel: str = ""
+    nosol: bool = True
+
+    def calc_function(self, solute, bb_atoms, solvent, ions, ts):
+        d1 = solute.select_atoms(self.domain1_sel)
+        d2 = solute.select_atoms(self.domain2_sel)
+        d3 = solute.select_atoms(self.domain3_sel)
+        axis1 = self._oriented_axis(d1, d2)
+        axis3 = self._oriented_axis(d3, d2)
+        cos_angle = np.dot(axis1, axis3)
+        angle = np.degrees(np.arccos(np.clip(cos_angle, -1.0, 1.0)))
+        dist_12 = np.linalg.norm(d1.center_of_mass() - d2.center_of_mass())
+        dist_13 = np.linalg.norm(d1.center_of_mass() - d3.center_of_mass())
+        dist_23 = np.linalg.norm(d2.center_of_mass() - d3.center_of_mass())
+        results = {
+            "time": ts.time,
+            "frame": ts.frame,
+            "angle": angle,
+            "dist_12": dist_12,
+            "dist_13": dist_13,
+            "dist_23": dist_23,
+        }
+        frame_aux = {}
+        return results, frame_aux
+
+    @staticmethod
+    def _oriented_axis(domain, ref_domain):
+        """Long axis of `domain`, sign-fixed to point away from ref_domain."""
+        axis = domain.principal_axes()[0]
+        axis = axis / np.linalg.norm(axis)
+        pointing = domain.center_of_mass() - ref_domain.center_of_mass()
+        if np.dot(axis, pointing) < 0:
+            axis = -axis
+        return axis
