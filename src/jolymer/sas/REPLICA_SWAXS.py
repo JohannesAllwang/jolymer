@@ -68,12 +68,16 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
 
     gss: list[GROMACS_SWAXS] = field(default_factory=list)
     name: str = ""
+    subfolders: bool=True
 
     def __post_init__(self):
         print('replica from:')
         self.NAME = f'R_{self.gss[0].NAME}'
         for irep, gs in enumerate(self.gss):
-            gs.npt_filename = f'../{gs.npt_filename}'
+            if self.subfolders:
+                gs.npt_filename = f'../{gs.npt_filename}'
+            else:
+                gs.npt_filename = f'{gs.npt_filename}'
             gs.irep = irep
             gs.NAME = f'R{irep}_{gs.NAME}'
             print(gs.NAME)
@@ -453,8 +457,10 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         return df, H, edges
 
     def get_bins_outdir(self):
-        return Path(self.gss[0].mdpath).parent / self.NAME
-
+        if self.subfolders:
+            return Path(self.gss[0].mdpath).parent / self.NAME
+        else:
+            return Path(self.gss[0].mdpath) / self.NAME
 
     def save_bins(self, df, parameters, save=True):
         bin_column = '_'.join(parameters)
@@ -570,10 +576,10 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                 nrows = len(pairs) // 2
                 ncols = 2
             fig, axes = plt.subplots(
-                nrows=nrows,
-                ncols=ncols,
+                nrows=ncols,
+                ncols=nrows,
                 squeeze=False,
-                figsize=(3.5*ncols, 3*nrows))
+                figsize=(3*nrows, 2.5*ncols))
             axes = axes.flatten()
         else:
             fig = axes[0].get_figure()
