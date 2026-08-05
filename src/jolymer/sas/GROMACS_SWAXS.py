@@ -1137,7 +1137,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
 
     def run_analysis(self, analysis, *args, **kwargs):
         if isinstance(analysis, str):
-            An = _analysis_dict[analysis_name]()
+            An = _analysis_dict[analysis]()
         else:
             An = analysis
         if An.nosol:
