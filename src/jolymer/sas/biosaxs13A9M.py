@@ -169,7 +169,7 @@ class biosaxs13A9M(SAXS_Measurement):
         q, I, errI = ai.integrate1d(data, npt=npt,
                                     mask=mask,
                                     error_model='poisson',
-                                    method=("splitpixel", "csr", "cython"),
+                                    method="csr",
                                     correctSolidAngle=True)
         dat_header = self.get_dat_header()
         T = float(dat_header['Sample Transmission coefficient'])
