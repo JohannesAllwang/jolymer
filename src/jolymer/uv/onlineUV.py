@@ -31,6 +31,15 @@ class onlineUV(Measurement):
     outwl: float=280
     alignment_time: float=280
 
+    def get_log_filepath(self, spec_filename=None):
+        if spec_filename is None:
+            spec_filename = self.spec_filename
+        log_filename = f'{spec_filename.split('.spc')[0]}.log'
+        return Path(path) / log_filename
+
+    def load_log(self, spec_filename=None):
+        log_filepath = self.get_log_filepath(spec_filename=spec_filename)
+
     def __post_init__(self, sample:bioMOLECULE=ac6):
         # Example: "20221117_AC6_0_1_34ul_c01_000001.spc"
         self.name = self.spec_filename.split("01")[0]
@@ -68,13 +77,38 @@ class onlineUV(Measurement):
         )
         return df
 
-    def get_scaled_Abs(self, refwl=None, outwl=None, alignment_time=None,
-                       show=False, show_wl=[]):
+    def get_scaled_Abs(
+        self,
+        refwl=None,
+        outwl=None,
+        alignment_time=None,
+        show=False,
+        show_wl=None,
+    ):
         """
-        Return scaled Abs vs time for two wavelengths.
-        refwl: reference wl (typically 260 nm)
-        outwl: wavelength to scale (e.g. 320 nm)
-        outwl : int | list[int]
+        Return scaled absorbance vs time for one or multiple wavelengths.
+        Parameters
+        ----------
+        refwl : int, optional
+            Reference wavelength. If unavailable, the closest measured wavelength
+            is used.
+        outwl : int or list[int], optional
+            Wavelength(s) to scale to the reference wavelength.
+        alignment_time : float, optional
+            Time point used for scaling.
+        show : bool
+            Plot reference and scaled absorbance.
+        show_wl : list[int], optional
+            Additional wavelengths to plot.
+        Returns
+        -------
+        pd.DataFrame
+            Scaled absorbance:
+                time, Abs, err_Abs
+        Notes
+        -----
+        Scaling assumes:
+            Abs_out_scaled = Abs_out * Abs_ref(t_align) / Abs_out(t_align)
         """
         if refwl is None:
             refwl = self.refwl
@@ -82,69 +116,111 @@ class onlineUV(Measurement):
             outwl = self.outwl
         if alignment_time is None:
             alignment_time = self.alignment_time
+        if show_wl is None:
+            show_wl = []
         if not isinstance(outwl, (list, tuple, np.ndarray)):
             outwl = [outwl]
-        Noutwl = len(outwl)
         df = self.load_data().T
-        # df.T[i][0] = wavelength
-        # df.T[i][1:] = absorption series
-
-        outdict = {}
-        outdict["scaled_outs"] = []
-        outdict["scale_factors"] = []
-
-        for i in range(20, 151):
-            # print(df.iloc[i])
+        uv_channels = {}
+        for i in range(20, df.shape[1]):
             wl = int(df.iat[0, i])
-            # print(wl)
-            Abs = df[i][1:].astype(float).values
-            time = np.linspace(0, len(Abs), len(Abs)) * 0.946
+            Abs = df.iloc[1:, i].astype(float).values
+            time = np.arange(len(Abs)) * 0.946
             ddf = pd.DataFrame({
                 "time": time,
                 "Abs": Abs,
             })
-            ddf = ddf[ddf.time<self.maxtime]
-            ddf = ddf[ddf.time>self.mintime]
-            if np.isclose(wl, refwl, atol=0.5):
-                outdict["ref"] = ddf
-                if np.isclose(outwl, refwl, atol=0.5).any():
-                    outdict["scaled_out"] = ddf
-                    outdict["scale_factor"] = 1
-                ddf0 = ddf.copy()
-                ddf0.Abs = ddf0.Abs * 0
-            elif wl in outwl:
-                if "ref" not in outdict:
-                    raise ValueError("Reference wavelength not processed yet.")
-                ddf_ref = outdict["ref"]
-                # scale at alignment_time index
-                idx = np.argmin(np.abs(ddf_ref.time.values - alignment_time))
-                factor = ddf_ref.Abs.iloc[idx] / ddf.Abs.iloc[idx]
-                ddf["Abs"] = ddf["Abs"] * factor
-                outdict["scaled_outs"].append(ddf)
-                outdict["scale_factors"].append(factor)
-            show_wl_dfs = []
-            for wl in show_wl:
-                if np.isclose(wl, refwl, atol=0.5):
-                    show_wl_dfs.append(ddf)
-
-        Abs_stack = np.vstack([ddf.Abs.values for ddf in outdict["scaled_outs"]])
-        outdict["scaled_out"] = pd.DataFrame({
-            "time": outdict["scaled_outs"][0].time.values,
+            ddf = ddf[
+                (ddf.time < self.maxtime) &
+                (ddf.time > self.mintime)
+            ].reset_index(drop=True)
+            uv_channels[wl] = ddf
+        available_wl = np.array(sorted(uv_channels.keys()))
+        refwl_used = available_wl[
+            np.argmin(np.abs(available_wl - refwl))
+        ]
+        ref = uv_channels[refwl_used]
+        scaled_channels = []
+        scale_factors = []
+        for wl in outwl:
+            if wl not in uv_channels:
+                raise ValueError(
+                    f"Wavelength {wl} nm not available. "
+                    f"Available range: {available_wl.min()}-{available_wl.max()} nm"
+                )
+            channel = uv_channels[wl].copy()
+            ref_abs = np.interp(
+                alignment_time,
+                ref.time,
+                ref.Abs
+            )
+            out_abs = np.interp(
+                alignment_time,
+                channel.time,
+                channel.Abs
+            )
+            if np.isclose(out_abs, 0):
+                raise ValueError(
+                    f"Cannot scale {wl} nm: absorbance is zero "
+                    f"at alignment time {alignment_time}"
+                )
+            factor = ref_abs / out_abs
+            channel["Abs"] *= factor
+            scaled_channels.append(channel)
+            scale_factors.append(factor)
+        Abs_stack = np.vstack([
+            x.Abs.values for x in scaled_channels
+        ])
+        scaled_out = pd.DataFrame({
+            "time": scaled_channels[0].time.values,
             "Abs": Abs_stack.mean(axis=0),
             "err_Abs": Abs_stack.std(axis=0),
         })
-        outdict["scale_factor"] = float(np.mean([factor for factor in outdict["scale_factors"]]))
+        scaled_out.attrs.update({
+            "refwl_requested": refwl,
+            "refwl_used": refwl_used,
+            "outwl": outwl,
+            "scale_factors": scale_factors,
+            "mean_scale_factor": float(np.mean(scale_factors)),
+            "alignment_time": alignment_time,
+        })
         if show:
-            fig, ax = plt.subplots()
-            ax.plot(outdict["scaled_out"].time, outdict["scaled_out"].Abs, label=f"$Abs_{{{outwl}}} \\times {factor:.2f}$")
-            ax.plot(outdict["ref"].time, outdict["ref"].Abs, label=f"$Abs_{{{refwl}}}$ reference")
-            idx = np.argmin(np.abs(outdict["ref"].time.values - alignment_time))
-            ax.plot(outdict["ref"].time.iloc[idx], outdict["ref"].Abs.iloc[idx], label=f"$Abs_{{{refwl}}}$ reference")
-            ax.set_xlabel(f"time [s]")
-            ax.set_ylabel(f"Abs")
-            ax.legend()
+            self.plot_scaled_Abs(scaled_out, ref)
+        return scaled_out
 
-        return outdict["scaled_out"]
+    def plot_scaled_Abs(self, scaled_out, ref):
+        fig, ax = plt.subplots()
+        refwl = scaled_out.attrs["refwl_requested"]
+        refwl_used = scaled_out.attrs["refwl_used"]
+        outwl = scaled_out.attrs["outwl"]
+        scale_factors = scaled_out.attrs["scale_factors"]
+        mean_scale_factor = scaled_out.attrs["mean_scale_factor"]
+        alignment_time = scaled_out.attrs["alignment_time"]
+        ax.plot(
+            scaled_out.time,
+            scaled_out.Abs,
+            label=(
+                f"scaled {outwl} nm "
+                f"(factor={np.mean(scale_factors):.3f})"
+            )
+        )
+        ax.plot(
+            ref.time,
+            ref.Abs,
+            label=f"{refwl_used} nm reference"
+        )
+        idx = np.argmin(
+            np.abs(ref.time.values - alignment_time)
+        )
+        ax.scatter(
+            ref.time.iloc[idx],
+            ref.Abs.iloc[idx],
+            label="alignment point"
+        )
+        ax.set_xlabel("time [s]")
+        ax.set_ylabel("Abs")
+        ax.legend(fontsize='xx-small')
+        return ax
 
     def plot_full_wavelength_map(self,
                               wl_min=210,
