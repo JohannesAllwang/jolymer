@@ -138,10 +138,16 @@ class biosaxs13A(SAXS_Measurement):
             for t in times
         ]
         return pd.DataFrame({
-            'frame': frames + 1,
+            'frame': frames,
             'time': times,
             'datetime': datetimes
         })
+
+    def save_data_collection_dates(self, **kwargs):
+        df = self.get_data_collection_dates(**kwargs)
+        outpath = Path(self.path) / 'data_collection_dates.dat'
+        df.to_csv(outpath, sep='\t', index=False)
+        return df
 
     def save_time_lookup(self, filepath=None):
         get_data_collection_date(self, filepath=None, frame=0)
