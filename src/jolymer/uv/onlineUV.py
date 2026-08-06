@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+from datetime import datetime, timedelta
 
 from ..Measurement import Measurement
 from .. import os_utility as osu
@@ -31,21 +32,105 @@ class onlineUV(Measurement):
     outwl: float=280
     alignment_time: float=280
 
-    def get_log_filepath(self, spec_filename=None):
-        if spec_filename is None:
-            spec_filename = self.spec_filename
-        log_filename = f'{spec_filename.split('.spc')[0]}.log'
-        return Path(path) / log_filename
-
-    def load_log(self, spec_filename=None):
-        log_filepath = self.get_log_filepath(spec_filename=spec_filename)
-
     def __post_init__(self, sample:bioMOLECULE=ac6):
         # Example: "20221117_AC6_0_1_34ul_c01_000001.spc"
         self.name = self.spec_filename.split("01")[0]
         self.filename = f"{self.name}_onlineUV.dat"
         self.sample = sample
         osu.create_path("ellution")
+
+    def get_log_filepath(self, spec_filename=None):
+        if spec_filename is None:
+            spec_filename = self.spec_filename
+        log_filename = f'{spec_filename.split('.spc')[0]}.log'
+        return Path(self.path) / log_filename
+
+    def load_log(self, spec_filename=None):
+        log_filepath = self.get_log_filepath(spec_filename=spec_filename)
+
+    def load_log(self, spec_filename=None):
+        """
+        Load J&M UV log file.
+        Returns
+        -------
+        data : pd.DataFrame
+            Columns:
+                time       : elapsed time [s]
+                datetime       : absolute timestamp
+                Abs columns
+        metadata : dict
+            Header information
+        """
+        log_filepath = self.get_log_filepath(spec_filename)
+        metadata = {}
+        data_lines = []
+        in_data = False
+        with open(log_filepath, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if line == "[Data]":
+                    in_data = True
+                    continue
+                if not in_data:
+                    if "\t" in line:
+                        key, value = line.split("\t", 1)
+                        metadata[key] = value
+                else:
+                    data_lines.append(line)
+        start_time = None
+        if "Date" in metadata:
+            start_time = datetime.strptime(
+                metadata["Date"],
+                "%I:%M:%S.%f %p %m/%d/%Y"
+            )
+        rows = []
+        for line in data_lines:
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            t = datetime.strptime(
+                parts[0],
+                "%H:%M:%S.%f"
+            )
+            elapsed = (
+                t.hour * 3600
+                + t.minute * 60
+                + t.second
+                + t.microsecond / 1e6
+            )
+            values = [float(x) for x in parts[1:]]
+            rows.append(
+                [elapsed] + values
+            )
+        data = pd.DataFrame(rows)
+        data.rename(
+            columns={0: "time"},
+            inplace=True
+        )
+        if start_time is not None:
+            data["datetime"] = [
+                start_time + timedelta(seconds=t)
+                for t in data.time
+            ]
+        else:
+            data["datetime"] = pd.NaT
+        return data, metadata
+
+    def get_time(self, spec_filename=None):
+        """
+        Return elapsed UV acquisition time [s].
+        """
+        data, _ = self.load_log(spec_filename)
+        return data["time"].values
+
+    def get_datetime(self, spec_filename=None):
+        """
+        Return elapsed UV acquisition time [s].
+        """
+        data, _ = self.load_log(spec_filename)
+        return data["datetime"].values
 
     def get_spec_filename(self):
         return Path(self.path) / self.spec_filename
@@ -125,9 +210,11 @@ class onlineUV(Measurement):
         for i in range(20, df.shape[1]):
             wl = int(df.iat[0, i])
             Abs = df.iloc[1:, i].astype(float).values
-            time = np.arange(len(Abs)) * 0.946
+            time = self.get_time()
+            datetime = self.get_datetime()
             ddf = pd.DataFrame({
                 "time": time,
+                "datetime": datetime,
                 "Abs": Abs,
             })
             ddf = ddf[
@@ -173,6 +260,7 @@ class onlineUV(Measurement):
         ])
         scaled_out = pd.DataFrame({
             "time": scaled_channels[0].time.values,
+            "datetime": scaled_channels[0].datetime.values,
             "Abs": Abs_stack.mean(axis=0),
             "err_Abs": Abs_stack.std(axis=0),
         })
