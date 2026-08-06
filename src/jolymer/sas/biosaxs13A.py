@@ -8,7 +8,10 @@ import pandas as pd
 from .SAXS_Measurement import SAXS_Measurement
 
 
-class biosaxs13A9M(SAXS_Measurement):
+class biosaxs13A(SAXS_Measurement):
+    """
+    SAXS_Measurement subclass with additional methods specific to integrating detector immages at the 13A biosaxs beamline of the NSRRC in Taiwan
+    """
 
     def get_poni_filename(self, filepath=None, M=9):
         parent_dir = Path(self.path).parent
@@ -113,6 +116,36 @@ class biosaxs13A9M(SAXS_Measurement):
             frameshift = datetime.timedelta(seconds=float(frame*frame_time))
             date = date + frameshift
         return date
+
+    def get_data_collection_dates(self, filepath=None, frame=0):
+        if filepath is None:
+            filepath = self.get_dat_header()['Sample filename']
+            filepath = filepath.split('_00')[0]+'.h5'
+            filepath = join(self.path, '..', filepath)
+            # print(filepath)
+        with h5py.File(filepath, 'r') as hdf:
+            date_bytes = hdf['entry']['instrument']['detector']['detectorSpecific']['data_collection_date'][()]
+            nframes = hdf['entry']['data']['data'].shape[0]
+        date_str = date_bytes.decode('utf-8')
+        date = datetime.datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S.%f')
+        frames = []
+        times = []
+        datetimes = []
+        for frame in range(nframes):
+            frame_time = self.get_frame_time(filepath=filepath)
+            frameshift = datetime.timedelta(seconds=float(frame*frame_time))
+            date = date + frameshift
+            frames.append(frame+1)
+            times.append(frame_time)
+            datetimes.append(date)
+        return pd.Dataframe({
+            'frame': frames,
+            'time': times,
+            'datetime': datetimes})
+
+    def save_time_lookup(self, filepath=None):
+        get_data_collection_date(self, filepath=None, frame=0)
+
 
     def get_count_time(self, filepath=None):
         """
