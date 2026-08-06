@@ -125,23 +125,23 @@ class biosaxs13A(SAXS_Measurement):
             # print(filepath)
         with h5py.File(filepath, 'r') as hdf:
             date_bytes = hdf['entry']['instrument']['detector']['detectorSpecific']['data_collection_date'][()]
-            nframes = hdf['entry']['data']['data'].shape[0]
+            nframes = hdf['entry']['data']['data_000001'].shape[0]
+            # print(nframes.keys())
+            # print(np.shape(nframes.attr))
         date_str = date_bytes.decode('utf-8')
-        date = datetime.datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S.%f')
-        frames = []
-        times = []
-        datetimes = []
-        for frame in range(nframes):
-            frame_time = self.get_frame_time(filepath=filepath)
-            frameshift = datetime.timedelta(seconds=float(frame*frame_time))
-            date = date + frameshift
-            frames.append(frame+1)
-            times.append(frame_time)
-            datetimes.append(date)
-        return pd.Dataframe({
-            'frame': frames,
+        start_date = datetime.datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S.%f')
+        frame_time = self.get_frame_time()
+        frames = np.arange(nframes)
+        times = frames * frame_time
+        datetimes = [
+            start_date + datetime.timedelta(seconds=float(t))
+            for t in times
+        ]
+        return pd.DataFrame({
+            'frame': frames + 1,
             'time': times,
-            'datetime': datetimes})
+            'datetime': datetimes
+        })
 
     def save_time_lookup(self, filepath=None):
         get_data_collection_date(self, filepath=None, frame=0)
