@@ -122,6 +122,14 @@ class SEC_SWAXS:
     bioREGALS_waxs: Optional[bioREGALS] = None
     regals_result_waxs: dict = field(default_factory=dict)
 
+    def get_saxs_path(self):
+        if not cm_saxs is None:
+            return cm_saxs.get_saxs_path()
+        if not saxs is None:
+            return saxs[0].path
+        else:
+            print("No saxs path loaded yet")
+
     def to_json(self, path: Path):
         outdict = {
             "_state_version": 1,

@@ -437,8 +437,40 @@ class CoupledMeasurement:
         self._alignment["qmax"] = qmax
         return self._alignment
 
+    def get_saxs_path(self):
+        saxs_path = self.saxs_list.ms[0].path
+        return Path(saxs_path)
+
+    def run_autorg(self, autorg_name="autorg.dat", pattern="GR_*.dat"):
+        """
+        Run ATSAS autorg on all matching files and write the combined
+        output to a CSV file.
+        Parameters
+        ----------
+        directory : str or pathlib.Path
+            Directory containing the GR_*.dat files.
+        output : str or pathlib.Path
+            Output CSV filename.
+        pattern : str
+            Input file pattern.
+        """
+        import subprocess
+        directory = Path(self.get_saxs_path())
+        output = directory / autorg_name
+        files = sorted(directory.glob(pattern))
+        if not files:
+            raise FileNotFoundError(
+                f"No files matching {pattern!r} found in {directory}"
+            )
+        subprocess.run(
+            ["autorg", *map(str, files), "-o", str(output)],
+            check=True,
+        )
+        return output
+
     def load_autorg(self, autorg_filename='autorg.dat',
-                    datetime_filename='data_collection_dates.dat')
+                    datetime_filename='data_collection_dates.dat'):
+        saxs_path = self.get_saxs_path()
         autorg_path = Path(saxs_path, autorg_filename)
         datetime_path = Path(saxs_path, datetime_filename)
         autorg_dict = {
@@ -447,7 +479,7 @@ class CoupledMeasurement:
             'I0': []
         }
         for m in cm_saxs.saxs_list:
-            m.datetime = m.time / cm_saxs._alignment['scale'] - cm_saxs._alignment['shift']/cm_saxs._alignment['scale']
+            m.datetime = m.time / self._alignment['scale'] - cm_saxs._alignment['shift']/cm_saxs._alignment['scale']
             df = m.load_autorg(autorg_path)
             row = df.loc[df["file"] == m.filename]
             if len(row)>0:
@@ -554,6 +586,41 @@ class CoupledMeasurement:
         ax.plot(dfX.time, uv_y / uv_y.max(), label="UV")
         ax.legend()
         return ax
+
+    def plot_uv_autorg(self, autorg_name='autorg.dat',
+                       ax=None):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(7, 3))
+        autorg_path = Path(self.get_saxs_path()) / autorg_name
+        if not autorg_path.exists():
+            self.run_autorg(autorg_name=autorg_name)
+        self.load_autorg(autorg_name=autorg_name)
+        axU = ax.twinx()
+        self.uv.plot_full_wavelength_map(
+            wl_min=260,
+            wl_max=290,
+            refwl=280,
+            ax=axU,
+            alignment_time=1600,
+        )
+        axU.set_ylim(0,0.7)
+        ax.plot(autorg_df.time, autorg_df.Rg, color="green")
+        ax.set_ylabel(r"$R_g$ (nm)", color="green")
+        ax.tick_params(axis="y", colors="green")
+        ax.set_ylim(2, 15)
+        axI = ax.twinx()
+        axI.spines["right"].set_position(("outward", 50))
+        axI.plot(autorg_df.time, autorg_df.I0, color="black")
+        axI.set_ylabel(r"$I(0)$", color="black")
+        axI.tick_params(axis="y", colors="black")
+        axI.set_ylim(0, 0.36)
+        ax.set_xlabel("Time (s)")
+        ax.set_xlim(900, 2000)
+        ax.annotate(NAME, xy=(0.5,0.8), xycoords='axes fraction')
+        ax.xaxis.set_major_formatter(
+            matplotlib.ticker.FuncFormatter(lambda x, pos: x / 60)
+        )
+        ax.set_xticks(60*np.linspace(15,30,11))
 
     @staticmethod
     def align_uv_df_to_saxs_df(
