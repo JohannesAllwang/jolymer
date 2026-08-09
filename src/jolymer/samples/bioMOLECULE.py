@@ -253,7 +253,6 @@ def load_bsa():
 
 
 # https://molbiotools.com/dnacalculator.php
-
 def load_ac6():
     ac6 = DNA(name='AC6',
               pdb_path=str(DATA / "ac6.gro"),
