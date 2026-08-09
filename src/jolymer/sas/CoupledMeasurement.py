@@ -393,16 +393,13 @@ class CoupledMeasurement:
         Extend this later with deconvolution, R^6 scaling, etc.
         """
         df = dfUV.copy()
-
         if mode == "identity":
             return df
-
         elif mode == "custom":
             # placeholder for future logic
             # e.g. df['Abs'] = deconvolve(df['Abs'], ...)
             # e.g. df['Abs'] *= df['R']**6
             raise NotImplementedError("Custom UV preprocessing not implemented")
-
         else:
             raise ValueError(f"Unknown UV preprocessing mode: {mode}")
 
@@ -439,6 +436,30 @@ class CoupledMeasurement:
         self._alignment["qmin"] = qmin
         self._alignment["qmax"] = qmax
         return self._alignment
+
+    def load_autorg(self, autorg_filename='autorg.dat',
+                    datetime_filename='data_collection_dates.dat')
+        autorg_path = Path(saxs_path, autorg_filename)
+        datetime_path = Path(saxs_path, datetime_filename)
+        autorg_dict = {
+            'time': [],
+            'Rg': [],
+            'I0': []
+        }
+        for m in cm_saxs.saxs_list:
+            m.datetime = m.time / cm_saxs._alignment['scale'] - cm_saxs._alignment['shift']/cm_saxs._alignment['scale']
+            df = m.load_autorg(autorg_path)
+            row = df.loc[df["file"] == m.filename]
+            if len(row)>0:
+                m.autorg = [row.Rg.iat[0], row.I0.iat[0]]
+                # print(row, m.filename)
+            else:
+                m.autorg = [np.nan, np.nan]
+            autorg_dict['time'].append(m.uv_time)
+            autorg_dict['Rg'].append(m.autorg[0])
+            autorg_dict['I0'].append(m.autorg[1])
+        return pd.DataFrame(autorg_dict)
+
 
     def interpolate_uv(self):
         if self._alignment is None:
