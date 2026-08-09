@@ -130,6 +130,7 @@ class SEC_SWAXS:
         else:
             print("No saxs path loaded yet")
 
+
     def to_json(self, path: Path):
         outdict = {
             "_state_version": 1,
@@ -142,7 +143,6 @@ class SEC_SWAXS:
             "to_regals": self.to_regals,
             "to_regals_waxs": self.to_regals_waxs,
         }
-
         with open(path, "w") as f:
             json.dump(outdict, f, indent=2, cls=StateEncoder)
 

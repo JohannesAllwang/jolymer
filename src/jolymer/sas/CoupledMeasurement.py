@@ -4,6 +4,7 @@ from scipy.interpolate import interp1d
 from scipy.signal import correlate
 from pathlib import Path
 from dataclasses import dataclass
+import re
 
 from .SAXS_Measurement import SAXS_Measurement
 from .ms import Ms
@@ -295,20 +296,72 @@ class AlignSAXS_WAXS:
         return chi2_per_frame
 
 
+_AUTORG_LINE_RE = re.compile(
+    r"^\s*(?P<Rg>[\d.]+)\s+(?P<Rg_stdev_pct>\d+)%\s+"
+    r"(?P<I0>[\d.eE+-]+)\s+"
+    r"(?P<g_first>\d+)\s*-\s*(?P<g_last>\d+)\s*\(\s*(?P<g_npoints>\d+)\s*\)\s+"
+    r"(?P<quality_pct>\d+)%\s*(?P<flag>[A-Za-z]?)\s+"
+    r"(?P<file>\S+)\s*$"
+)
+
+
+def parse_autorg_table(path):
+    """
+    Parse an ATSAS `autorg` batch-summary file into a DataFrame.
+    Source columns: Rg, stdev(%), I(0), Guinier points, Quality(%), File.
+    There is no direct I(0) error in this table - only a *relative* error
+    on Rg (stdev, %) and an overall fit Quality (%). `Rg_err` is derived as
+    Rg * Rg_stdev_pct / 100 for convenience; `I0_err` is left as NaN.
+    Important: the `File` column is frequently NOT just the bare filename -
+    ATSAS includes the parent folder (e.g. "B3/B3_0.dat") whenever it needs
+    to disambiguate or fit the column width. `filename` here is the
+    basename only, and is what should be used to match against your own
+    measurement objects' filenames (see `load_autorg` below) - matching on
+    the full `file` string will silently fail to find any rows whenever
+    that prefix is present.
+    """
+    rows = []
+    with open(path) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if not line.strip():
+                continue
+            m = _AUTORG_LINE_RE.match(line)
+            if m is None:
+                continue  # header line or anything unparseable - skip it
+            d = m.groupdict()
+            rows.append({
+                "Rg": float(d["Rg"]),
+                "Rg_stdev_pct": float(d["Rg_stdev_pct"]),
+                "I0": float(d["I0"]),
+                "guinier_first": int(d["g_first"]),
+                "guinier_last": int(d["g_last"]),
+                "guinier_npoints": int(d["g_npoints"]),
+                "quality_pct": float(d["quality_pct"]),
+                "aggregation_flag": d["flag"].upper() == "A",
+                "file": d["file"],
+                "filename": Path(d["file"]).name,
+            })
+    if not rows:
+        raise ValueError(f"No parseable autorg rows found in {path}")
+    df = pd.DataFrame(rows)
+    df["Rg_err"] = df["Rg"] * df["Rg_stdev_pct"] / 100.0
+    df["I0_err"] = np.nan
+    return df
+
 @dataclass
 class CoupledMeasurement:
     """
     Couples SAXS and online UV measurements recorded at the same spot.
     Handles alignment, interpolation, and joint diagnostics.
     """
-
     saxs_list: Ms
     uv: onlineUV
     sample: bioMOLECULE
     qmin: float = 0.001
     qmax: float = 0.5
     qstar: float = 0.1
-    saxs_kind: str = 'I0'
+    saxs_kind: str = 'autorg'
 
     def __post_init__(self):
         self._I = None
@@ -340,12 +393,27 @@ class CoupledMeasurement:
         return self._q, self._I, self._sigma, self._x
 
     def get_saxs_scalar(self, kind="I0", qstar=0.1,
-                        qmin=0.04, qmax=0.4, load=False):
+                     qmin=0.04, qmax=0.4, load=False,
+                        autorg_filename="autorg.dat"):
         """
-        Returns frame, time, I0 for the saxs
+        Returns frame, time, I0 (+ optionally errI0) for the saxs series.
+        New: kind="autorg" sources I0/Rg from ATSAS `autorg` output
+        (`self._autorg_df`, built by `load_autorg`) instead of the internal
+        Guinier-region fit in `self.saxs_list.get_rgs(...)`. This is much
+        faster (autorg already ran once from the GUI) and matches whatever
+        autorg itself decided the Guinier region was, rather than the fixed
+        (qmin, qmax) bounds / bounded fit used by kind="I0".
         """
         q = self._q if self._q is not None else self.build_saxs_matrix()[0]
-        if kind == "I0":
+        if kind == "autorg":
+            autorg_path = Path(self.get_saxs_path()) / autorg_filename
+            if not autorg_path.exists():
+                self.run_autorg()
+            autorg_df = self.load_autorg(autorg_filename=autorg_filename)
+            frames = [getattr(m, "seqi", i) for i, m in enumerate(self.saxs_list)]
+            autorg_df.insert(0, "frame", frames)
+            return autorg_df[["frame", "time", "I0", "errI0"]]
+        elif kind == "I0":
             frames = []
             times = []
             rgdf = self.saxs_list.get_rgs(qmin=qmin, qmax=qmax,
@@ -360,9 +428,7 @@ class CoupledMeasurement:
                 'I0': rgdf.I0,
                 'errI0': rgdf.err_I0})
         elif kind == "Iq":
-            q = self._q if self._q is not None else self.build_saxs_matrix()[0]
             idx = np.argmin(np.abs(q - qstar))
-            print(idx)
             frames = []
             times = []
             I0s = []
@@ -377,13 +443,6 @@ class CoupledMeasurement:
                 'time': times,
                 'I0': I0s,
                 'errI0': errI0s})
-                # 'I0': self._I[idx, :]})
-        # elif kind == 'integrate':
-        #     idx_min = np.searchsorted(q, qmin)
-        #     idx_max = np.searchsorted(q, qmax)
-        #     print(np.trapz(self._I[idx_min:idx_max], q[idx_min:idx_max], axis=0))
-        #     return np.trapz(self._I[idx_min:idx_max], q[idx_min:idx_max],
-        #                     axis=0)
         else:
             raise ValueError(f"Unknown SAXS scalar: {kind}")
 
@@ -427,7 +486,7 @@ class CoupledMeasurement:
             min_t_saxs=min_t_saxs,
             max_t_saxs=max_t_saxs,
             I0_min=I0_min,
-            preprocess_uv_mode="identity",  # later: "custom"
+            preprocess_uv_mode="identity",
             scale0shift0=scale0shift0,
         )
         self._alignment = alignment
@@ -441,7 +500,8 @@ class CoupledMeasurement:
         saxs_path = self.saxs_list.ms[0].path
         return Path(saxs_path)
 
-    def run_autorg(self, autorg_name="autorg.dat", pattern="GR_*.dat"):
+    def run_autorg(self, autorg_name="autorg.dat", pattern="GR_*.dat",
+                   directory=None):
         """
         Run ATSAS autorg on all matching files and write the combined
         output to a CSV file.
@@ -455,7 +515,10 @@ class CoupledMeasurement:
             Input file pattern.
         """
         import subprocess
-        directory = Path(self.get_saxs_path())
+        if directory is None:
+            saxs_path = self.get_saxs_path()
+        else:
+            saxs_path = directory
         output = directory / autorg_name
         files = sorted(directory.glob(pattern))
         if not files:
@@ -468,30 +531,50 @@ class CoupledMeasurement:
         )
         return output
 
-    def load_autorg(self, autorg_filename='autorg.dat',
-                    datetime_filename='data_collection_dates.dat'):
-        saxs_path = self.get_saxs_path()
+    def load_autorg(self, autorg_filename="autorg.dat", directory=None):
+        """
+        Read an autorg.dat produced by `run_autorg` and attach Rg/I0 to each
+        measurement in `self.saxs_list`.
+        Parses the whole table once with `parse_autorg_table` (see above) and
+        matches rows to measurements by **basename**, since the table's `File`
+        column often includes a parent-folder prefix (e.g. "B3/B3_0.dat") that
+        won't equal a bare `m.filename` - matching on the full string was
+        silently dropping every row (Rg/I0 all NaN) whenever that prefix was
+        present.
+        """
+        saxs_path = Path(directory) if directory is not None else self.get_saxs_path()
         autorg_path = Path(saxs_path, autorg_filename)
-        datetime_path = Path(saxs_path, datetime_filename)
-        autorg_dict = {
-            'time': [],
-            'Rg': [],
-            'I0': []
-        }
-        for m in cm_saxs.saxs_list:
-            m.datetime = m.time / self._alignment['scale'] - cm_saxs._alignment['shift']/cm_saxs._alignment['scale']
-            df = m.load_autorg(autorg_path)
-            row = df.loc[df["file"] == m.filename]
-            if len(row)>0:
-                m.autorg = [row.Rg.iat[0], row.I0.iat[0]]
-                # print(row, m.filename)
+        table = parse_autorg_table(autorg_path).set_index("filename")
+        autorg_dict = {"time": [], "Rg": [], "I0": [], "errRg": [], "errI0": []}
+        for m in self.saxs_list:
+            if self._alignment.get("scale") is not None:
+                m.datetime = (
+                    m.time / self._alignment["scale"]
+                    - self._alignment["shift"] / self._alignment["scale"]
+                )
+            key = Path(m.filename).name  # normalize in case m.filename ever carries a folder too
+            if key in table.index:
+                row = table.loc[key]
+                if isinstance(row, pd.DataFrame):
+                    raise ValueError(
+                        f"Ambiguous autorg match for {key!r}: multiple rows "
+                        f"share this basename ({list(row['file'])}). Use full "
+                        f"relative paths for m.filename, or dedupe the input files."
+                    )
+                m.autorg = [row.Rg, row.I0]
+                err_rg = row.Rg_err
+                err_i0 = row.I0_err
             else:
                 m.autorg = [np.nan, np.nan]
-            autorg_dict['time'].append(m.uv_time)
-            autorg_dict['Rg'].append(m.autorg[0])
-            autorg_dict['I0'].append(m.autorg[1])
-        return pd.DataFrame(autorg_dict)
-
+                err_rg = np.nan
+                err_i0 = np.nan
+            autorg_dict["time"].append(m.time)
+            autorg_dict["Rg"].append(m.autorg[0])
+            autorg_dict["I0"].append(m.autorg[1])
+            autorg_dict["errRg"].append(err_rg)
+            autorg_dict["errI0"].append(err_i0)
+        self._autorg_df = pd.DataFrame(autorg_dict)
+        return self._autorg_df
 
     def interpolate_uv(self):
         if self._alignment is None:
@@ -587,40 +670,62 @@ class CoupledMeasurement:
         ax.legend()
         return ax
 
-    def plot_uv_autorg(self, autorg_name='autorg.dat',
-                       ax=None):
+    def plot_uv_autorg(
+        self,
+        autorg_name="autorg.dat",
+        pattern="GR_*.dat",
+        wl_min=260,
+        wl_max=290,
+        refwl=280,
+        xlim=None,
+        ylim_rg=None,
+        ylim_i0=None,
+        ylim_uv=None,
+        name=None,
+        minutes=False,
+        ax=None,
+    ):
         if ax is None:
             fig, ax = plt.subplots(figsize=(7, 3))
         autorg_path = Path(self.get_saxs_path()) / autorg_name
         if not autorg_path.exists():
-            self.run_autorg(autorg_name=autorg_name)
-        self.load_autorg(autorg_name=autorg_name)
+            self.run_autorg(autorg_name=autorg_name, pattern=pattern)
+        autorg_df = self.load_autorg(autorg_filename=autorg_name)
+        autorg_df.time = autorg_df.time / self._alignment['scale'] - self._alignment['shift'] / self._alignment['scale']
         axU = ax.twinx()
         self.uv.plot_full_wavelength_map(
-            wl_min=260,
-            wl_max=290,
-            refwl=280,
+            wl_min=wl_min,
+            wl_max=wl_max,
+            refwl=refwl,
             ax=axU,
-            alignment_time=1600,
+            alignment_time=self.uv.alignment_time,
         )
-        axU.set_ylim(0,0.7)
+        if ylim_uv is not None:
+            axU.set_ylim(*ylim_uv)
         ax.plot(autorg_df.time, autorg_df.Rg, color="green")
         ax.set_ylabel(r"$R_g$ (nm)", color="green")
         ax.tick_params(axis="y", colors="green")
-        ax.set_ylim(2, 15)
+        if ylim_rg is not None:
+            ax.set_ylim(*ylim_rg)
         axI = ax.twinx()
         axI.spines["right"].set_position(("outward", 50))
         axI.plot(autorg_df.time, autorg_df.I0, color="black")
         axI.set_ylabel(r"$I(0)$", color="black")
         axI.tick_params(axis="y", colors="black")
-        axI.set_ylim(0, 0.36)
+        if ylim_i0 is not None:
+            axI.set_ylim(*ylim_i0)
         ax.set_xlabel("Time (s)")
-        ax.set_xlim(900, 2000)
-        ax.annotate(NAME, xy=(0.5,0.8), xycoords='axes fraction')
-        ax.xaxis.set_major_formatter(
-            matplotlib.ticker.FuncFormatter(lambda x, pos: x / 60)
-        )
-        ax.set_xticks(60*np.linspace(15,30,11))
+        if xlim is not None:
+            ax.set_xlim(*xlim)
+        if name is not None:
+            ax.annotate(name, xy=(0.5, 0.8), xycoords="axes fraction")
+        if minutes:
+            ax.xaxis.set_major_formatter(
+                matplotlib.ticker.FuncFormatter(lambda x, pos: f"{x / 60:.0f}")
+            )
+            ax.set_xlabel("Time (min)")
+        return ax, autorg_df
+
 
     @staticmethod
     def align_uv_df_to_saxs_df(

@@ -46,7 +46,6 @@ src/jolymer/dsc/mettler.py
 src/jolymer/gui/__init__.py
 src/jolymer/gui/regals/__init__.py
 src/jolymer/gui/regals/app.py
-src/jolymer/gui/regals/state.py
 src/jolymer/gui/regals/utils.py
 src/jolymer/gui/regals/console/__init__.py
 src/jolymer/gui/regals/console/ipython_widget.py
@@ -70,11 +69,12 @@ src/jolymer/sas/GROMACS_SWAXS.py
 src/jolymer/sas/REPLICA_SWAXS.py
 src/jolymer/sas/SAXS_Measurement.py
 src/jolymer/sas/SAXS_Model.py
+src/jolymer/sas/SEC_SWAXS.py
 src/jolymer/sas/__init__.py
 src/jolymer/sas/atsas_utility.py
 src/jolymer/sas/beaucage.py
 src/jolymer/sas/bioREGALS.py
-src/jolymer/sas/biosaxs13A9M.py
+src/jolymer/sas/biosaxs13A.py
 src/jolymer/sas/dab.py
 src/jolymer/sas/desy.py
 src/jolymer/sas/double_beaucage.py

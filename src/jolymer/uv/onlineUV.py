@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from datetime import datetime, timedelta
+from dateutil import parser as dateutil_parser
 
 from ..Measurement import Measurement
 from .. import os_utility as osu
@@ -46,9 +47,6 @@ class onlineUV(Measurement):
         return Path(self.path) / log_filename
 
     def load_log(self, spec_filename=None):
-        log_filepath = self.get_log_filepath(spec_filename=spec_filename)
-
-    def load_log(self, spec_filename=None):
         """
         Load J&M UV log file.
         Returns
@@ -81,10 +79,10 @@ class onlineUV(Measurement):
                     data_lines.append(line)
         start_time = None
         if "Date" in metadata:
-            start_time = datetime.strptime(
-                metadata["Date"],
-                "%I:%M:%S.%f %p %m/%d/%Y"
-            )
+            # was: datetime.strptime(metadata["Date"], "%I:%M:%S.%f %p %m/%d/%Y")
+            # -> broke under non-English LC_TIME (e.g. zh_TW) because %p only
+            #    matches the locale's own AM/PM strings, not literal "AM"/"PM".
+            start_time = dateutil_parser.parse(metadata["Date"])
         rows = []
         for line in data_lines:
             parts = line.split()
@@ -117,6 +115,7 @@ class onlineUV(Measurement):
         else:
             data["datetime"] = pd.NaT
         return data, metadata
+
 
     def get_time(self, spec_filename=None):
         """
@@ -338,7 +337,7 @@ class onlineUV(Measurement):
             if wl < wl_min or wl > wl_max:
                 continue
             Abs = df[i][1:].astype(float).values
-            time = np.linspace(0, len(Abs), len(Abs)) * 0.946
+            time = self.get_time()
             # store reference
             if np.isclose(wl, refwl, atol=0.5):
                 ref_trace = Abs.copy()
