@@ -125,7 +125,11 @@ class biosaxs13A(SAXS_Measurement):
             # print(filepath)
         with h5py.File(filepath, 'r') as hdf:
             date_bytes = hdf['entry']['instrument']['detector']['detectorSpecific']['data_collection_date'][()]
-            nframes = hdf['entry']['data']['data_000001'].shape[0]
+            data_group = hdf['entry']['data']
+            nframes = sum(
+                data_group[key].shape[0]
+                for key in data_group.keys()
+            )
             # print(nframes.keys())
             # print(np.shape(nframes.attr))
         date_str = date_bytes.decode('utf-8')
