@@ -210,7 +210,6 @@ class mixture:
             return AA
 
     def extract_concentration(self,I,err,k):
-
         notk = np.setdiff1d(np.arange(self.Nc), k)
         c = self.concentrations
         y = self.profiles
@@ -220,11 +219,9 @@ class mixture:
         m = (w**2 * yk) / (yk @ (w**2 * yk))
         pk = D.T @ m
         sigmak = np.sqrt(err.T**2 @ m**2)
-
         return [pk, sigmak]
 
     def extract_profile(self,I,err,k):
-
         notk = np.setdiff1d(np.arange(self.Nc), k)
         c = self.concentrations
         y = self.profiles
@@ -233,8 +230,72 @@ class mixture:
         m = ck/(ck @ ck)
         Ik = D @ m
         sigmak = np.sqrt(err**2 @ m**2)
-
         return [Ik, sigmak]
+
+    def extract_profile_selected(self, I, err, k,
+                                 cfrac=0.5,
+                                 chi2_max=10,
+                                 c_err=None):
+        notk = np.setdiff1d(np.arange(self.Nc), k)
+        c = self.concentrations
+        y = self.profiles
+        ck = c[:, k]
+        mask = ck >= cfrac * np.max(ck)
+        if chi2_max is not None:
+            chi2 = self.get_chi2(I, err)
+            mask &= chi2 < chi2_max
+        frames = np.flatnonzero(mask)
+        if len(frames) == 0:
+            raise ValueError("No frames satisfy the extraction criteria.")
+        D = I - y[:, notk] @ c[:, notk].T
+        Dsel = D[mask]
+        csel = ck[mask]
+        errsel = err[mask]
+        m = csel / (csel @ csel)
+        Ik = Dsel.T @ m
+        sigma_I = np.sqrt(
+            (errsel.T ** 2) @ m**2
+        )
+        result = {
+            'profile': Ik,
+            'error': sigma_I,
+            'frames': frames,
+            'mask': mask,
+            'weights': m,
+            'concentration': csel,
+        }
+        return result
+
+    def get_chi2(self, I, sigma):
+        """
+        Calculate reduced chi-square for every frame.
+        Parameters
+        ----------
+        I : ndarray
+            Experimental intensities, shape (n_frames, n_q).
+        sigma : ndarray
+            Experimental uncertainties, shape (n_frames, n_q).
+        Returns
+        -------
+        chi2 : ndarray
+            Chi-square value for each frame, shape (n_frames,).
+        """
+        profiles = []
+        err_profiles = []
+        for k in range(self.Nc):
+            Ik, sigma_k = self.extract_profile(I, sigma, k)
+            profiles.append(Ik)
+            err_profiles.append(sigma_k)
+        profiles = np.asarray(profiles)          # (n_comp, n_q)
+        err_profiles = np.asarray(err_profiles)  # (n_comp, n_q)
+        I_model = self.concentrations @ profiles
+        err_I_model = self.concentrations @ err_profiles
+        total_sigma = np.sqrt(
+            sigma**2 + err_I_model.T**2
+        )
+        residuals = (I - I_model.T) / total_sigma
+        chi2 = np.mean(residuals**2, axis=0)
+        return chi2
 
     @property
     def H_concentration(self):

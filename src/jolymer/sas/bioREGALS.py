@@ -116,6 +116,74 @@ class bioMIXTURE(mixture):
             uv_weight=d.get("uv_weight", 1.0),
         )
 
+    def extract_profile_selected(self, I, err, k,
+                                 cfrac=0.7,
+                                 chi2_max=4,
+                                 c_err=None):
+        notk = np.setdiff1d(np.arange(self.Nc), k)
+        c = self.concentrations
+        y = self.profiles
+        ck = c[:, k]
+        if ck.max()+ck.min() < 0:
+            ack = -ck.copy()
+        else:
+            ack = ck.copy()
+        mask = ack >= cfrac * np.max(ack)
+        if chi2_max is not None:
+            chi2 = self.get_chi2(I, err)
+            mask &= chi2 < chi2_max
+        frames = np.flatnonzero(mask)
+        if len(frames) == 0:
+            raise ValueError("No frames satisfy the extraction criteria.")
+        D = I - y[:, notk] @ c[:, notk].T
+        Dsel = D[:, mask]
+        csel = ack[mask]
+        errsel = err[:, mask]
+        m = csel / (csel @ csel)
+        Ik = Dsel @ m
+        sigma_I = np.sqrt(
+            (errsel ** 2) @ m**2
+        )
+        result = {
+            'I': Ik,
+            'err_I': sigma_I,
+            'frames': frames,
+            'mask': mask,
+            'weights': m,
+            'concentration': csel,
+        }
+        return result
+
+    def get_chi2(self, I, sigma):
+        """
+        Calculate reduced chi-square for every frame.
+        Parameters
+        ----------
+        I : ndarray
+            Experimental intensities, shape (n_frames, n_q).
+        sigma : ndarray
+            Experimental uncertainties, shape (n_frames, n_q).
+        Returns
+        -------
+        chi2 : ndarray
+            Chi-square value for each frame, shape (n_frames,).
+        """
+        profiles = []
+        err_profiles = []
+        for k in range(self.Nc):
+            Ik, sigma_k = self.extract_profile(I, sigma, k)
+            profiles.append(Ik)
+            err_profiles.append(sigma_k)
+        profiles = np.asarray(profiles)          # (n_comp, n_q)
+        err_profiles = np.asarray(err_profiles)  # (n_comp, n_q)
+        I_model = self.concentrations @ profiles
+        err_I_model = self.concentrations @ err_profiles
+        total_sigma = np.sqrt(
+            sigma**2 + err_I_model.T**2
+        )
+        residuals = (I - I_model.T) / total_sigma
+        chi2 = np.mean(residuals**2, axis=0)
+        return chi2
 
 
 class bioREGALS(regals):
