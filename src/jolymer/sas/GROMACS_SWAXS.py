@@ -527,14 +527,15 @@ class GROMACS_SWAXS(SAXS_Measurement):
         ax.legend(title='Best-fit intervals')
         return ax
 
-    def plot_rg_chi2(self, ax=None, medoid_times=None, gyrate=True):
+    def plot_rg_chi2(self, ax=None, medoid_times=None, gyrate=True,
+                     maxqfit=np.inf):
         color_chi2 = jocolors.tstum1
         color_rg = jocolors.tstum7
         rgref = SAXS_Measurement.get_rg(self, df=self.get_data(), qmin=0.3, qmax=0.8)['Rg']
         print('rgref', rgref)
         dfrg = self.get_rg()
         print('rg_filename', self.rg_filename)
-        df = self.get_all()
+        df = self.get_all(maxqfit=maxqfit)
         if medoid_times is None:
             medoid_times = self.pick_chi2(df)['time']
         if ax is None:
@@ -716,7 +717,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
                      angular_unit='A', every_n=1, max_out=1000, index_list=None,
                      spectra_colors=None, spectra_legend=True,
                      inset=False, inset_xlim=None, inset_ylim=None,
-                     spectra_timeis=[0,200], q_cutoff=0.15, **kwargs):
+                     spectra_timeis=[0,200], q_cutoff=0.15, label_addon='', **kwargs):
         path = self.mdpath if path is None else path
         filename = self.spectra_filename if filename is None else filename
         file = Path(path, filename) if filename is not None else self.get_spectra_filename()
@@ -740,11 +741,11 @@ class GROMACS_SWAXS(SAXS_Measurement):
                 ax_inset.set_yscale('log')
                 ax_inset.tick_params(axis='both', which='both', direction='in',
                                      pad=2.0)
-                ax_inset = self.plot_data(ax=ax_inset, label=f'{self.name}', marker='o', linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
+                ax_inset = self.plot_data(ax=ax_inset, label=f'{self.name}{label_addon}', marker='o', linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
             if ax_res is None:
                 _, ax_res = plt.subplots()
             ax_res.plot([df_data.q[df_data.q<maxqfit].min(), df_data[df_data.q<maxqfit].q.max()], [0, 0])
-            ax = self.plot_data(ax=ax, label=f'{self.name}', marker=self.marker, linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
+            ax = self.plot_data(ax=ax, label=f'{self.name}{label_addon}', marker=self.marker, linestyle='', scale=self.shift, unit=angular_unit, **kwargs)
         out = self.get_waxs_spectra(file, every_n=every_n, max_out=max_out)
         dfs, times = out['dfs'][1::], out['times'][1::]
         # print('il', index_list)
@@ -799,7 +800,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         return odict['df'], chi2 if chi2 is not None else odict['chi2']
 
     def _compute_rg(self, df, angular_unit='A', plot=False, ax=None):
-        qmin, qmax = 0.08, 0.1
+        qmin, qmax = 0.02, 0.05
         dfr = df.copy()
         if angular_unit == 'A': dfr.q *= 10; qmin, qmax = 10*qmin, 10*qmax
         return SAXS_Measurement.get_rg(self, df=dfr, plot=plot, ax=ax, qmin=qmin, qmax=qmax)
@@ -842,7 +843,8 @@ class GROMACS_SWAXS(SAXS_Measurement):
                 spectra_filename=None,
                 proj_filename=None,
                 rmsf_filename=None,
-                waxspot_name=None):
+                waxspot_name=None,
+                maxqfit=np.inf):
         if mdpath is None:
             mdpath = self.mdpath
         if spectra_filename is None:
@@ -859,7 +861,8 @@ class GROMACS_SWAXS(SAXS_Measurement):
                                      max_out=100000,
                                      plot=plot_spectra,
                                      angular_unit='A',
-                                     get_Rg=True)
+                                     get_Rg=True,
+                                         maxqfit=maxqfit)
         for key in spectra_dict.keys():
             print(key, len(spectra_dict[key]))
         spectra_df = pd.DataFrame({'time': spectra_dict['time'],
