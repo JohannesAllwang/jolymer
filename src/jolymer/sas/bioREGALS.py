@@ -118,7 +118,7 @@ class bioMIXTURE(mixture):
 
     def extract_profile_selected(self, I, err, k,
                                  cfrac=0.7,
-                                 chi2_max=4,
+                                 chi2_max=3,
                                  c_err=None):
         notk = np.setdiff1d(np.arange(self.Nc), k)
         c = self.concentrations
