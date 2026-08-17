@@ -12,6 +12,8 @@ from .. import os_utility as osu
 from ..samples.bioMOLECULE import bioMOLECULE, load_ac6
 from ..import plot_utility as plu
 
+# import jolymer.uv.spc as spc
+
 ac6 = load_ac6()
 
 
@@ -139,7 +141,7 @@ class onlineUV(Measurement):
 
     def get_data(self):
         """Convert .spc → .dat, then read the data."""
-        import spc_spectra as spc
+        import jolymer.uv.spc as spc
 
         spc_file = spc.File(self.get_spec_filename())
         spc_file.write_file(self.get_filename())

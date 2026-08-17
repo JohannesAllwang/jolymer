@@ -112,7 +112,7 @@ class MplCanvas(FigureCanvasQTAgg):
 
 
 class SecMainWindow(QMainWindow):
-    def __init__(self, state: CoupledMeasurement, parent=None):
+    def __init__(self, state: SEC_SAXS, parent=None):
         super().__init__(parent)
         self.state = state
         self.setWindowTitle("SEC-SAXS / UV overview")
@@ -149,7 +149,8 @@ class SecMainWindow(QMainWindow):
         self.canvas = MplCanvas()
         right_splitter.addWidget(self.canvas)
 
-        self.console = IPythonConsole(namespace={"state": self.state, "np": np})
+        self.console = IPythonConsole(namespace={"cm": self.state.CM,
+                                                 "np": np})
         right_splitter.addWidget(self.console)
         right_splitter.setStretchFactor(0, 3)
         right_splitter.setStretchFactor(1, 1)
@@ -296,7 +297,7 @@ class SecMainWindow(QMainWindow):
 
     def _hydrate_from_state(self):
         """Pre-fill fields from an already-populated CoupledMeasurement (if any)."""
-        uv = self.state.uv
+        uv = self.state.CM.uv
         if uv is not None:
             if getattr(uv, "refwl", None) is not None:
                 self.uv_refwl.setValue(uv.refwl)
@@ -318,7 +319,7 @@ class SecMainWindow(QMainWindow):
                 self.uv_path.setText(str(Path(uv.path, uv.spec_filename)))
 
         try:
-            saxs_dir = self.state.get_saxs_path()
+            saxs_dir = self.state.CM.get_saxs_path()
             if saxs_dir:
                 self.saxs_dir.setText(str(saxs_dir))
         except Exception:
@@ -365,7 +366,7 @@ class SecMainWindow(QMainWindow):
                 maxtime=self.uv_maxtime.value(),
             )
             uv.get_data()
-            self.state.uv = uv
+            self.state.CM.uv = uv
             self._log(f"Loaded UV: {path}")
         except Exception as e:
             self._log_exception(f"Error loading UV:", e)
@@ -375,7 +376,7 @@ class SecMainWindow(QMainWindow):
             directory = Path(self.saxs_dir.text())
             if not directory.exists():
                 raise ValueError("Invalid SAXS directory")
-            out = self.state.run_autorg(
+            out = self.state.CM.run_autorg(
                 autorg_name=self.autorg_name.text(),
                 pattern=f"{self.saxs_pattern.text()}_*.dat",
                 directory=directory,
@@ -393,25 +394,25 @@ class SecMainWindow(QMainWindow):
                    min_seqi=0, max_seqi=100000, q_beamstop=0.006,
                    exclude_seqi=[], frame_time=2.1,
                    angular_unit='A')
-            self.state.saxs_list = ms
+            self.state.CM.saxs_list = ms
             self._log(f"saxs loaded to")
         except Exception as e:
             self._log_exception(f"Error running autorg:", e)
 
     def run_alignment(self):
         try:
-            if self.state.uv is None:
+            if self.state.CM.uv is None:
                 raise ValueError("Load UV data first")
             directory = Path(self.saxs_dir.text())
             autorg_path = directory / self.autorg_name.text()
             if not autorg_path.exists():
                 self.run_autorg()
-            # make sure self.state._autorg_df reflects the chosen directory/name
-            self.state.load_autorg(
+            # make sure self.state.CM._autorg_df reflects the chosen directory/name
+            self.state.CM.load_autorg(
                 autorg_filename=self.autorg_name.text(),
                 directory=directory,
             )
-            alignment = self.state.align_uv_to_saxs(
+            alignment = self.state.CM.align_uv_to_saxs(
                 saxs_kind="autorg",
                 min_t_saxs=self.align_min_t.value(),
                 max_t_saxs=self.align_max_t.value(),
@@ -430,22 +431,22 @@ class SecMainWindow(QMainWindow):
 
     def update_plot(self):
         try:
-            if self.state.uv is None:
+            if self.state.CM.uv is None:
                 raise ValueError("Load UV data first")
             directory = Path(self.saxs_dir.text())
             autorg_path = directory / self.autorg_name.text()
             if not autorg_path.exists():
                 self.run_autorg()
-            autorg_df = self.state.load_autorg(
+            autorg_df = self.state.CM.load_autorg(
                 autorg_filename=self.autorg_name.text(),
                 directory=directory,
             )
-            autorg_df.time = autorg_df.time / self.state._alignment['scale'] - self.state._alignment['shift'] / self.state._alignment['scale']
+            autorg_df.time = autorg_df.time / self.state.CM._alignment['scale'] - self.state.CM._alignment['shift'] / self.state.CM._alignment['scale']
             fig = self.canvas.fig
             fig.clear()
             ax = fig.add_subplot(111)
             axU = ax.twinx()
-            self.state.uv.plot_full_wavelength_map(
+            self.state.CM.uv.plot_full_wavelength_map(
                 wl_min=self.wl_min.value(),
                 wl_max=self.wl_max.value(),
                 refwl=self.plot_refwl.value(),
@@ -484,7 +485,7 @@ class SecMainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     cm = CoupledMeasurement([], None, None)
-    win = SecMainWindow(state=cm)
+    win = SecMainWindow(state.CM=cm)
     win.show()
     sys.exit(app.exec())
 

@@ -14,6 +14,7 @@ from jolymer.sas.CoupledMeasurement import CoupledMeasurement
 from jolymer.sas.bioREGALS import *
 from jolymer.uv.onlineUV import onlineUV
 from jolymer.sas.SAXS_Measurement import SAXS_Measurement
+from jolymer.sas.biosaxs13A import biosaxs13A
 
 
 class StateEncoder(json.JSONEncoder):
@@ -107,24 +108,17 @@ class SEC_SWAXS:
         "onlineUV": onlineUV,
     }
     sample: Optional[bioMOLECULE] = None
-    saxs: Optional[Ms] = None
-    waxs: Optional[Ms] = None
-    cm_saxs: Optional[CoupledMeasurement] = None
-    cm_waxs: Optional[CoupledMeasurement] = None
-    uv: Optional[onlineUV] = None
+    CM: Optional[CoupledMeasurement] = None
+    detector_immage: Optional[biosaxs13A] = None
     mixture: bioMIXTURE | None = None
-    mixture_waxs: bioMIXTURE | None = None
 
     to_regals: dict = field(default_factory=dict)
     bioREGALS: Optional[bioREGALS] = None
     regals_result: dict = field(default_factory=dict)
-    to_regals_waxs: dict = field(default_factory=dict)
-    bioREGALS_waxs: Optional[bioREGALS] = None
-    regals_result_waxs: dict = field(default_factory=dict)
 
     def get_saxs_path(self):
-        if not cm_saxs is None:
-            return cm_saxs.get_saxs_path()
+        if not CM is None:
+            return CM.get_saxs_path()
         if not saxs is None:
             return saxs[0].path
         else:
@@ -181,10 +175,10 @@ class SEC_SWAXS:
                 uv=self.uv,
                 sample=self.sample
             )
-            if self.cm_saxs is None:
-                self.cm_saxs = new_cm
+            if self.CM is None:
+                self.CM = new_cm
             else:
-                self.cm_saxs.__dict__.update(new_cm.__dict__)
+                self.CM.__dict__.update(new_cm.__dict__)
         if self.waxs and self.uv and self.sample:
             new_cm_waxs = CoupledMeasurement(waxs_list=self.waxs,
                                         uv=self.uv,
