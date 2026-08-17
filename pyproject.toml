@@ -30,6 +30,7 @@ dependencies = [
     "MDAnalysis",
     "pyFAI",
     "sasview",
+    "mdtraj",
     "sasmodels",
 ]
 
