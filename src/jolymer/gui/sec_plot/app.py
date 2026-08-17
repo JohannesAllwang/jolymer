@@ -501,6 +501,7 @@ class SecMainWindow(QMainWindow):
             self._align_from_para()
         elif method == "Stochastic fit":
             self._align_stochastic()
+        self.update_plot()
 
     def _align_from_para(self):
         try:
@@ -554,7 +555,7 @@ class SecMainWindow(QMainWindow):
             )
             self._log(f"Alignment: {alignment}")
             if self.auto_apply_shift.isChecked():
-                for m in self.CM.saxs_list:
+                for m in self.state.CM.saxs_list:
                     m.time = m.time / alignment['scale'] - alignment['shift'] / alignment['scale']
         except Exception as e:
             self._log_exception(f"Error aligning UV/SAXS:", e)
@@ -595,12 +596,35 @@ class SecMainWindow(QMainWindow):
             xmin, xmax = self.xmin.value(), self.xmax.value()
             if xmax > xmin:
                 ax.set_xlim(xmin, xmax)
-            ax.set_ylim(0, 150)
-            if self.minutes_check.isChecked():
-                ax.xaxis.set_major_formatter(
-                    matplotlib.ticker.FuncFormatter(lambda x, pos: f"{x / 60:.0f}")
+            saxs = self.state.CM.saxs_list
+            saxs_time = np.array([m.time for m in saxs], dtype=float)
+            saxs_frame = np.array([m.seqi for m in saxs], dtype=float)
+            ax_frame = ax.twiny()
+            def update_frame_axis(ax):
+                xmin, xmax = ax.get_xlim()
+                mask = (
+                    (saxs_time >= xmin) &
+                    (saxs_time <= xmax)
                 )
-                ax.set_xlabel("Time (min)")
+                times = saxs_time[mask]
+                frames = saxs_frame[mask]
+                if len(times) == 0:
+                    ax_frame.set_xticks([])
+                    return
+                target_labels = 8
+                step = max(1, int(np.ceil(len(frames) / target_labels)))
+                ax_frame.set_xticks(times[::step])
+                ax_frame.set_xticklabels(
+                    [str(int(f)) for f in frames[::step]]
+                )
+            def on_xlim_changed(ax):
+                ax_frame.set_xlim(ax.get_xlim())
+                update_frame_axis(ax)
+            ax_frame.set_xlim(ax.get_xlim())
+            update_frame_axis(ax)
+            ax.callbacks.connect("xlim_changed", on_xlim_changed)
+            ax_frame.set_xlabel("X-ray frame")
+            ax.set_ylim(0,150)
             name = self.sample_name.text()
             if name:
                 ax.annotate(name, xy=(0.5, 0.9), xycoords="axes fraction")
