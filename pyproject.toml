@@ -29,7 +29,6 @@ dependencies = [
     "PyQt6",
     "MDAnalysis",
     "pyFAI",
-    "spc_spectra",
     "sasview",
     "sasmodels",
 ]
