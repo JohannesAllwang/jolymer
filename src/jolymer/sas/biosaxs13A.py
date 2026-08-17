@@ -101,9 +101,9 @@ class biosaxs13A(SAXS_Measurement):
             f"No preceding Para result found for {prefix}"
         )
 
-    def get_Para_time0(self):
+    def get_Para_time0(self, filepath=None):
         para = self.get_Para()
-        filename_9M = self.get_dat_header(filepath=self.filepath)["Sample filename"]
+        filename_9M = self.get_dat_header(filepath=filepath)["Sample filename"]
         prefix = filename_9M.split("_")[0]
         row = para.loc[para["File name"].astype(str).str.strip() == prefix]
         if row.empty:
@@ -117,7 +117,7 @@ class biosaxs13A(SAXS_Measurement):
         out_times = []
         Para_time0 = self.get_Para_time0()
         for frame_number in range(self.get_len_frames()):
-            time = Para_time0 + frame_number * self.get_count_time()
+            time = Para_time0 + frame_number * self.get_frame_time()
             out_times.append(time)
         return out_times
 
@@ -131,7 +131,7 @@ class biosaxs13A(SAXS_Measurement):
                 out = out / 7
         return out
 
-    def get_rigi(self/, filepath=None, buffer=False):
+    def get_rigi(self, filepath=None, buffer=False):
         header_dict = self.get_dat_header(filepath=filepath)
         len_frames = self.get_len_frames(filepath=filepath, buffer=buffer)
         civiSMPs, rigiSMPs, expSMPs = [], [], []
@@ -189,17 +189,21 @@ class biosaxs13A(SAXS_Measurement):
             # print(nframes.keys())
             # print(np.shape(nframes.attr))
         date_str = date_bytes.decode('utf-8')
+        h5_start = datetime.datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S.%f')
         if time0 is None:
-            start_date = datetime.datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S.%f')
+            start_date = h5_start
         else:
             start_date = time0
         frame_time = self.get_frame_time()
         frames = np.arange(nframes)
-        times = frames * frame_time
         datetimes = [
-            start_date + datetime.timedelta(seconds=float(t))
-            for t in times
+            h5_start + datetime.timedelta(seconds=float(frame * frame_time))
+            for frame in frames
         ]
+        times = np.array([
+            (dt - start_date).total_seconds()
+            for dt in datetimes
+        ])
         return pd.DataFrame({
             'frame': frames,
             'time': times,

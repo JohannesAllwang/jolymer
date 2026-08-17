@@ -117,28 +117,31 @@ class SEC_SWAXS:
     regals_result: dict = field(default_factory=dict)
 
     def get_saxs_path(self):
-        if not CM is None:
-            return CM.get_saxs_path()
-        if not saxs is None:
-            return saxs[0].path
+        if not self.CM is None:
+            return self.CM.get_saxs_path()
+        if not self.saxs is None:
+            return self.saxs[0].path
         else:
             print("No saxs path loaded yet")
 
     def get_detector_image(self):
         try:
-            mCM = CM.saxs_list[0]
+            mCM = self.CM.saxs_list[0]
             return biosaxs13A(path=mCM.path, filename=mCM.filename)
         except Exception as e:
             print(e)
             return None
 
     def align_from_h5(self):
+        import pandas as pd
         mDI = self.get_detector_image()
         uv_datetime = self.CM.uv.get_datetime()
-        datetime_df = mDI.get_data_collection_dates(time0=uv_datetime[0])
+        print('uv_datetime', uv_datetime)
+        uv_time0 = pd.Timestamp(uv_datetime[0]).to_pydatetime()
+        datetime_df = mDI.get_data_collection_dates(time0=uv_time0)
         for m, time_h5 in zip(self.CM.saxs_list,
                               datetime_df['time'].values):
-            m.time_h5 = np.float(time_h5)
+            m.time = float(time_h5)
         return datetime_df
 
     def align_from_Para(self):
@@ -146,8 +149,8 @@ class SEC_SWAXS:
         mDI = self.get_detector_image()
         times_Para = mDI.get_Para_times()
         for m, time_Para in zip(self.CM.saxs_list,
-                              times_Para)
-            m.time_Para = np.float(time_Para)
+                                times_Para):
+            m.time = float(time_Para)
         return times_Para
 
 

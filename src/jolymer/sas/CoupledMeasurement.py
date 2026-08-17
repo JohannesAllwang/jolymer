@@ -599,6 +599,45 @@ class CoupledMeasurement:
         })
         return self._uv_on_saxs
 
+    def refine_uv_alignment(
+        self,
+        saxs_kind="autorg",
+        qstar=0.1,
+        qmin=0.04,
+        qmax=0.4,
+        load=True,
+        min_t_saxs=0,
+        max_t_saxs=np.inf,
+        I0_min=0,
+        shift_bounds=(-100, 100),
+    ):
+        dfUV = self.uv.get_scaled_Abs(
+            refwl=self.uv.refwl,
+            outwl=self.uv.outwl,
+            alignment_time=self.uv.alignment_time,
+        )
+        self.uv.df = dfUV
+        dfSAXS = self.get_saxs_scalar(
+            kind=saxs_kind,
+            qstar=qstar,
+            qmin=qmin,
+            qmax=qmax,
+            load=load,
+        )
+        refinement = self.refine_uv_shift(
+            dfUV,
+            dfSAXS,
+            min_t_saxs=min_t_saxs,
+            max_t_saxs=max_t_saxs,
+            I0_min=I0_min,
+            shift_bounds=shift_bounds,
+        )
+        # Keep the existing alignment information
+        self._alignment["shift"] = refinement["shift"]
+        self._alignment["scale"] = 1.0
+        self._alignment["refinement"] = refinement
+        return self._alignment
+
     def interpolate_uv_matrix(self, uv_wide, dt=0.946, mintime=None, maxtime=None):
         if self._alignment is None:
             raise RuntimeError("UV–SAXS alignment not computed")
@@ -806,6 +845,74 @@ class CoupledMeasurement:
             "method": "affine",
             "scale": a,
             "shift": b,
+            "score": score,
+            "success": res.success,
+        }
+
+    @staticmethod
+    def refine_uv_shift(
+        dfUV,
+        dfSAXS,
+        uv_col="Abs",
+        saxs_col="I0",
+        min_t_saxs=0,
+        max_t_saxs=np.inf,
+        I0_min=0,
+        shift0=0.0,
+        shift_bounds=(-10.0, 10.0),
+    ):
+        """
+        Refine an already approximately aligned UV/SAXS time axis
+        by optimizing only a small time shift.
+        The UV time axis is transformed as:
+            t_uv_corrected = t_uv + shift
+        No scale correction is performed.
+        """
+        from scipy.optimize import minimize_scalar
+        t_saxs = dfSAXS["time"].to_numpy()
+        y_saxs = dfSAXS[saxs_col].to_numpy()
+        mask = (
+            (t_saxs >= min_t_saxs) &
+            (t_saxs <= max_t_saxs) &
+            (y_saxs >= I0_min)
+        )
+        t_saxs = t_saxs[mask]
+        y_saxs = y_saxs[mask]
+        t_uv = dfUV["time"].to_numpy()
+        y_uv = dfUV[uv_col].to_numpy()
+        # Normalize SAXS once
+        y_saxs_n = (
+            (y_saxs - y_saxs.mean()) /
+            y_saxs.std()
+        )
+        def loss(shift):
+            f = interp1d(
+                t_uv + shift,
+                y_uv,
+                kind="cubic",
+                bounds_error=False,
+                fill_value=0,
+            )
+            y_uv_i = f(t_saxs)
+            if np.std(y_uv_i) == 0:
+                return np.inf
+            y_uv_n = (
+                (y_uv_i - y_uv_i.mean()) /
+                y_uv_i.std()
+            )
+            return -np.sum(y_saxs_n * y_uv_n)
+        res = minimize_scalar(
+            loss,
+            bounds=shift_bounds,
+            method="bounded",
+            options={"xatol": 0.01},
+        )
+        shift = float(res.x)
+        score = -res.fun
+        return {
+            "method": "shift_refinement",
+            "scale": 1.0,
+            "shift": shift,
             "score": score,
             "success": res.success,
         }

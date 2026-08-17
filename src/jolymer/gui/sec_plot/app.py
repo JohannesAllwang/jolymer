@@ -148,11 +148,16 @@ class SecMainWindow(QMainWindow):
         # RIGHT: plot on top, console below (resizable split), console kept
         # ---------------------------------------------------------
         right_splitter = QSplitter(Qt.Orientation.Vertical)
+        from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
         self.canvas = MplCanvas()
+        self.toolbar = NavigationToolbar2QT(self.canvas, self)
+        right_splitter.addWidget(self.toolbar)
         right_splitter.addWidget(self.canvas)
 
-        self.console = IPythonConsole(namespace={"cm": self.state.CM,
-                                                 "np": np})
+        self.console = IPythonConsole(namespace={
+            "state": self.state,
+            "cm": self.state.CM,
+            "np": np})
         right_splitter.addWidget(self.console)
         right_splitter.setStretchFactor(0, 3)
         right_splitter.setStretchFactor(1, 1)
@@ -284,11 +289,11 @@ class SecMainWindow(QMainWindow):
         # ------------------------------------------------------------
         self.align_method = QComboBox()
         self.align_method.addItems([
-            "From H5",
             "From Para",
+            "From H5",
             "Stochastic fit",
         ])
-        self.align_method.setCurrentText("Stochastic fit")
+        self.align_method.setCurrentText("From Para")
         self.align_method.currentTextChanged.connect(
             self._update_alignment_options
         )
@@ -296,6 +301,13 @@ class SecMainWindow(QMainWindow):
         # ------------------------------------------------------------
         # Stochastic-fit options
         # ------------------------------------------------------------
+        self.align_para_widget = QWidget()
+        para_form = QFormLayout(self.align_para_widget)
+        self.refine_para = QCheckBox(
+            "Refine Para by fitting"
+        )
+        para_form.addRow(self.refine_para)
+        form.addRow(self.align_para_widget)
         self.align_options_widget = QWidget()
         options_form = QFormLayout(self.align_options_widget)
         self.align_min_t = QDoubleSpinBox()
@@ -340,6 +352,8 @@ class SecMainWindow(QMainWindow):
     def _update_alignment_options(self, method):
         is_stochastic = method == "Stochastic fit"
         self.align_options_widget.setVisible(is_stochastic)
+        is_para = method == "From Para"
+        self.align_para_widget.setVisible(is_para)
 
     def _build_plot_group(self):
         box = CollapsibleBox("Overview plot", expanded=False)
@@ -495,6 +509,13 @@ class SecMainWindow(QMainWindow):
             if self.state.CM.saxs_list is None:
                 raise ValueError("Load SAXS data first")
             self.state.align_from_Para()
+            if self.refine_para.isChecked():
+                self.state.CM.refine_uv_alignment(
+                    shift_bounds=(-100, 100)
+                )
+        except Exception as e:
+            self._log_exception(f"Error aligning UV/SAXS:", e)
+
     def _align_from_h5(self):
         try:
             if self.state.CM.uv is None:
@@ -502,6 +523,8 @@ class SecMainWindow(QMainWindow):
             if self.state.CM.saxs_list is None:
                 raise ValueError("Load SAXS data first")
             self.state.align_from_h5()
+        except Exception as e:
+            self._log_exception(f"Error aligning UV/SAXS:", e)
 
     def _align_stochastic(self):
         try:
@@ -529,7 +552,8 @@ class SecMainWindow(QMainWindow):
             )
             self._log(f"Alignment: {alignment}")
             if self.auto_apply_shift.isChecked():
-                self.uv_alignment_time.setValue(alignment["shift"])
+                for m in self.CM.saxs_list:
+                    m.time = m.time / alignment['scale'] - alignment['shift'] / alignment['scale']
         except Exception as e:
             self._log_exception(f"Error aligning UV/SAXS:", e)
 
@@ -545,7 +569,6 @@ class SecMainWindow(QMainWindow):
                 autorg_filename=self.autorg_name.text(),
                 directory=directory,
             )
-            autorg_df.time = autorg_df.time / self.state.CM._alignment['scale'] - self.state.CM._alignment['shift'] / self.state.CM._alignment['scale']
             fig = self.canvas.fig
             fig.clear()
             ax = fig.add_subplot(111)

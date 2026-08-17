@@ -30,8 +30,10 @@ class Ms:
     model: str = ""
     name: str = ""
 
-
     def __index__(self, index):
+        return self.ms[index]
+
+    def __getitem__(self, index):
         return self.ms[index]
 
     def __iter__(self):
@@ -209,6 +211,10 @@ class Ms:
                     print(f'{par} not in fit_dict')
         self.df = pd.DataFrame(par_dict)
         return self.df
+
+    def get_times(self):
+        times = [m.time for m in self.ms]
+        return times
 
     def save_fit_results(self, path, **kwargs):
         self.df = self.get_results()
