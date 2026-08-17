@@ -61,7 +61,7 @@ python -m nuitka `
     --include-package=jolymer `
     --output-dir=build `
     --output-filename=jolymer-secplot.exe `
-    src/jolymer/gui/app.py
+    src/jolymer/gui/sec_plot/app.py
 
 # ------------------------------------------------------------
 # Install application
