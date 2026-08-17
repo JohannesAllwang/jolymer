@@ -13,7 +13,7 @@ authors = [
 
 description = "Package for data analysis"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.11"
 license = "MIT"
 
 classifiers = [
@@ -21,6 +21,18 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "matplotlib",
+    "PyQt6",
+    "MDAnalysis",
+    "pyFAI",
+    "spc_spectra",
+    "sasview",
+    "sasmodels",
+]
 
 [project.scripts]
 jolymer-regals = "jolymer.gui.regals.app:main"
