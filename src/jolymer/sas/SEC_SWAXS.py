@@ -124,6 +124,32 @@ class SEC_SWAXS:
         else:
             print("No saxs path loaded yet")
 
+    def get_detector_image(self):
+        try:
+            mCM = CM.saxs_list[0]
+            return biosaxs13A(path=mCM.path, filename=mCM.filename)
+        except Exception as e:
+            print(e)
+            return None
+
+    def align_from_h5(self):
+        mDI = self.get_detector_image()
+        uv_datetime = self.CM.uv.get_datetime()
+        datetime_df = mDI.get_data_collection_dates(time0=uv_datetime[0])
+        for m, time_h5 in zip(self.CM.saxs_list,
+                              datetime_df['time'].values):
+            m.time_h5 = np.float(time_h5)
+        return datetime_df
+
+    def align_from_Para(self):
+        # uv_time = self.CM.uv.get_time()
+        mDI = self.get_detector_image()
+        times_Para = mDI.get_Para_times()
+        for m, time_Para in zip(self.CM.saxs_list,
+                              times_Para)
+            m.time_Para = np.float(time_Para)
+        return times_Para
+
 
     def to_json(self, path: Path):
         outdict = {

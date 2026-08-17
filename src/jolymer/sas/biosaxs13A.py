@@ -65,6 +65,62 @@ class biosaxs13A(SAXS_Measurement):
                     break
             return outdict
 
+    def get_Para(self, filepath=None):
+        import re
+        if filepath is None:
+            filepath = self.get_filename()
+        filepath = Path(filepath)
+        header_dict = self.get_dat_header(filepath=filepath)
+        filename_9M = header_dict["Sample filename"]
+        # O64_master_0001.tif -> O64
+        prefix = filename_9M.split("_")[0]
+        match = re.fullmatch(r"([A-Z])(\d+)", prefix)
+        if match is None:
+            raise ValueError(f"Could not parse sample prefix: {prefix}")
+        letter, number = match.groups()
+        number = int(number)
+        for i in range(1, 100):
+            prev_number = number - i
+            prev_letter = letter
+            # O01 -> N99 -> N98 ...
+            if prev_number < 1:
+                prev_letter = chr(ord(letter) - 1)
+                prev_number = 100 + prev_number
+            candidate_prefix = f"{prev_letter}{prev_number:02d}"
+            matches = list(
+                filepath.parent.parent.glob(f"{candidate_prefix}_Para_*result.csv")
+            )
+            if matches:
+                if i >= 5:
+                    print(
+                        f"WARNING: Para file is {i} samples backwards: "
+                        f"{matches[0].name}"
+                    )
+                return pd.read_csv(matches[0])
+        raise FileNotFoundError(
+            f"No preceding Para result found for {prefix}"
+        )
+
+    def get_Para_time0(self):
+        para = self.get_Para()
+        filename_9M = self.get_dat_header(filepath=self.filepath)["Sample filename"]
+        prefix = filename_9M.split("_")[0]
+        row = para.loc[para["File name"].astype(str).str.strip() == prefix]
+        if row.empty:
+            raise ValueError(
+                f"Could not find {prefix} in Para 'File name' column"
+            )
+        return float(row.iloc[0]["IntervalTime(s)"])
+
+    def get_Para_times(self):
+        "Time from the sample injection acording to Para*csv file"
+        out_times = []
+        Para_time0 = self.get_Para_time0()
+        for frame_number in range(self.get_len_frames()):
+            time = Para_time0 + frame_number * self.get_count_time()
+            out_times.append(time)
+        return out_times
+
     def get_len_frames(self, filepath=None, buffer=False):
         header_dict = self.get_dat_header(filepath=filepath)
         out = int(header_dict['Total Frame Numbers'])
@@ -75,7 +131,7 @@ class biosaxs13A(SAXS_Measurement):
                 out = out / 7
         return out
 
-    def get_rigi(self, filepath=None, buffer=False):
+    def get_rigi(self/, filepath=None, buffer=False):
         header_dict = self.get_dat_header(filepath=filepath)
         len_frames = self.get_len_frames(filepath=filepath, buffer=buffer)
         civiSMPs, rigiSMPs, expSMPs = [], [], []
@@ -117,7 +173,7 @@ class biosaxs13A(SAXS_Measurement):
             date = date + frameshift
         return date
 
-    def get_data_collection_dates(self, filepath=None, frame=0):
+    def get_data_collection_dates(self, filepath=None, frame=0, time0=None):
         if filepath is None:
             filepath = self.get_dat_header()['Sample filename']
             filepath = filepath.split('_00')[0]+'.h5'
@@ -133,7 +189,10 @@ class biosaxs13A(SAXS_Measurement):
             # print(nframes.keys())
             # print(np.shape(nframes.attr))
         date_str = date_bytes.decode('utf-8')
-        start_date = datetime.datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S.%f')
+        if time0 is None:
+            start_date = datetime.datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S.%f')
+        else:
+            start_date = time0
         frame_time = self.get_frame_time()
         frames = np.arange(nframes)
         times = frames * frame_time
@@ -155,7 +214,6 @@ class biosaxs13A(SAXS_Measurement):
 
     def save_time_lookup(self, filepath=None):
         get_data_collection_date(self, filepath=None, frame=0)
-
 
     def get_count_time(self, filepath=None):
         """

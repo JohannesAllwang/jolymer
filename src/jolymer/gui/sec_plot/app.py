@@ -4,12 +4,13 @@ from pathlib import Path
 import numpy as np
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QFormLayout,
     QPushButton, QLineEdit, QFileDialog, QSplitter,
     QDoubleSpinBox, QCheckBox, QStyle, QSizePolicy, QLabel,
-    QToolButton, QScrollArea,
+    QToolButton, QScrollArea, QComboBox
 )
 
 # --- matplotlib ---
@@ -22,6 +23,7 @@ from jolymer.gui.regals.console.ipython_widget import IPythonConsole
 
 from jolymer.sas.CoupledMeasurement import CoupledMeasurement, ms_from_folder
 from jolymer.uv.onlineUV import onlineUV
+from jolymer.sas.SEC_SWAXS import SEC_SWAXS
 
 import traceback
 
@@ -112,7 +114,7 @@ class MplCanvas(FigureCanvasQTAgg):
 
 
 class SecMainWindow(QMainWindow):
-    def __init__(self, state: SEC_SAXS, parent=None):
+    def __init__(self, state: SEC_SWAXS, parent=None):
         super().__init__(parent)
         self.state = state
         self.setWindowTitle("SEC-SAXS / UV overview")
@@ -163,6 +165,57 @@ class SecMainWindow(QMainWindow):
         root_layout.addWidget(main_splitter)
 
         self._hydrate_from_state()
+
+        self._setup_menus()
+
+
+    # -------------------------
+    # Helpers
+    # -------------------------
+
+    def _setup_menus(self):
+        menubar = self.menuBar()
+        file_menu = menubar.addMenu("&File")
+        # Save
+        save_action = QAction("&Save state…", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self.save_state)
+        file_menu.addAction(save_action)
+        # Load
+        load_action = QAction("&Load state…", self)
+        load_action.setShortcut("Ctrl+O")
+        load_action.triggered.connect(self.load_state)
+        file_menu.addAction(load_action)
+        file_menu.addSeparator()
+        # Quit (standard)
+        quit_action = QAction("&Quit", self)
+        quit_action.setShortcut("Ctrl+Q")
+        quit_action.triggered.connect(self.close)
+        file_menu.addAction(quit_action)
+
+    def save_state(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save REGALS state", "", "REGALS state (*.json)"
+        )
+        if not path:
+            return
+        try:
+            self.state.to_json(Path(path))
+        except Exception as e:
+            QMessageBox.critical(self, "Save failed", str(e))
+
+    def load_state(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load REGALS state", "", "REGALS state (*.json)"
+        )
+        if not path:
+            return
+
+        try:
+            self.state.load_from_json(Path(path))
+            # self.state.rebuild_from_state()
+        except Exception as e:
+            QMessageBox.critical(self, "Load failed", str(e))
 
     # ---------------------------------------------------------------
     # Panel builders
@@ -224,11 +277,30 @@ class SecMainWindow(QMainWindow):
         return box
 
     def _build_alignment_group(self):
-        box = CollapsibleBox("Alignment (UV \u2194 SAXS)", expanded=False)
+        box = CollapsibleBox("Alignment (UV → SAXS)", expanded=False)
         form = box.form
-
+        # ------------------------------------------------------------
+        # Alignment method
+        # ------------------------------------------------------------
+        self.align_method = QComboBox()
+        self.align_method.addItems([
+            "From H5",
+            "From Para",
+            "Stochastic fit",
+        ])
+        self.align_method.setCurrentText("Stochastic fit")
+        self.align_method.currentTextChanged.connect(
+            self._update_alignment_options
+        )
+        form.addRow("Method", self.align_method)
+        # ------------------------------------------------------------
+        # Stochastic-fit options
+        # ------------------------------------------------------------
+        self.align_options_widget = QWidget()
+        options_form = QFormLayout(self.align_options_widget)
         self.align_min_t = QDoubleSpinBox()
         self.align_min_t.setMaximum(1e9)
+        self.align_min_t.setValue(400)
         self.align_max_t = QDoubleSpinBox()
         self.align_max_t.setMaximum(1e9)
         self.align_max_t.setValue(1e6)
@@ -242,24 +314,32 @@ class SecMainWindow(QMainWindow):
         self.align_shift0 = QDoubleSpinBox()
         self.align_shift0.setRange(-1e6, 1e6)
         self.align_shift0.setValue(0.0)
-        self.auto_apply_shift = QCheckBox("apply fitted shift to UV alignment_time")
+        self.auto_apply_shift = QCheckBox(
+            "apply fitted shift to UV alignment_time"
+        )
         self.auto_apply_shift.setChecked(True)
-
-        form.addRow("min t (SAXS, s)", self.align_min_t)
-        form.addRow("max t (SAXS, s)", self.align_max_t)
-        form.addRow("I0 min", self.align_i0_min)
-        form.addRow("scale0", self.align_scale0)
-        form.addRow("shift0", self.align_shift0)
-        form.addRow(self.auto_apply_shift)
-
+        options_form.addRow("min t (SAXS, s)", self.align_min_t)
+        options_form.addRow("max t (SAXS, s)", self.align_max_t)
+        options_form.addRow("I0 min", self.align_i0_min)
+        options_form.addRow("scale0", self.align_scale0)
+        options_form.addRow("shift0", self.align_shift0)
+        options_form.addRow(self.auto_apply_shift)
+        form.addRow(self.align_options_widget)
+        # ------------------------------------------------------------
+        # Result
+        # ------------------------------------------------------------
         self.align_result_label = QLabel("not aligned yet")
         self.align_result_label.setWordWrap(True)
         form.addRow(self.align_result_label)
-
-        align_btn = QPushButton("Align UV \u2194 SAXS (autorg)")
-        align_btn.clicked.connect(self.run_alignment)
-        form.addRow(align_btn)
+        self.align_btn = QPushButton("Align UV → SAXS")
+        self.align_btn.clicked.connect(self.run_alignment)
+        form.addRow(self.align_btn)
+        self._update_alignment_options(self.align_method.currentText())
         return box
+
+    def _update_alignment_options(self, method):
+        is_stochastic = method == "Stochastic fit"
+        self.align_options_widget.setVisible(is_stochastic)
 
     def _build_plot_group(self):
         box = CollapsibleBox("Overview plot", expanded=False)
@@ -400,6 +480,30 @@ class SecMainWindow(QMainWindow):
             self._log_exception(f"Error running autorg:", e)
 
     def run_alignment(self):
+        method = self.align_method.currentText()
+        if method == "From H5":
+            self._align_from_h5()
+        elif method == "From Para":
+            self._align_from_para()
+        elif method == "Stochastic fit":
+            self._align_stochastic()
+
+    def _align_from_para(self):
+        try:
+            if self.state.CM.uv is None:
+                raise ValueError("Load UV data first")
+            if self.state.CM.saxs_list is None:
+                raise ValueError("Load SAXS data first")
+            self.state.align_from_Para()
+    def _align_from_h5(self):
+        try:
+            if self.state.CM.uv is None:
+                raise ValueError("Load UV data first")
+            if self.state.CM.saxs_list is None:
+                raise ValueError("Load SAXS data first")
+            self.state.align_from_h5()
+
+    def _align_stochastic(self):
         try:
             if self.state.CM.uv is None:
                 raise ValueError("Load UV data first")
@@ -484,8 +588,9 @@ class SecMainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    cm = CoupledMeasurement([], None, None)
-    win = SecMainWindow(state.CM=cm)
+    CM = CoupledMeasurement([], None, None)
+    state = SEC_SWAXS(CM=CM)
+    win = SecMainWindow(state=state)
     win.show()
     sys.exit(app.exec())
 
