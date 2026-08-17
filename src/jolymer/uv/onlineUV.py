@@ -45,7 +45,7 @@ class onlineUV(Measurement):
     def get_log_filepath(self, spec_filename=None):
         if spec_filename is None:
             spec_filename = self.spec_filename
-        log_filename = f'{spec_filename.split('.spc')[0]}.log'
+        log_filename = f'{spec_filename.split(".spc")[0]}.log'
         return Path(self.path) / log_filename
 
     def load_log(self, spec_filename=None):
