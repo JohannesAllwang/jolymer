@@ -513,6 +513,8 @@ class SecMainWindow(QMainWindow):
                 self.state.CM.refine_uv_alignment(
                     shift_bounds=(-100, 100)
                 )
+                for m in self.state.CM.saxs_list:
+                    m.time = m.time - self.state.CM._alignment['shift']
         except Exception as e:
             self._log_exception(f"Error aligning UV/SAXS:", e)
 

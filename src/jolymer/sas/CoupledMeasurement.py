@@ -547,11 +547,6 @@ class CoupledMeasurement:
         table = parse_autorg_table(autorg_path).set_index("filename")
         autorg_dict = {"time": [], "Rg": [], "I0": [], "errRg": [], "errI0": []}
         for m in self.saxs_list:
-            if self._alignment.get("scale") is not None:
-                m.datetime = (
-                    m.time / self._alignment["scale"]
-                    - self._alignment["shift"] / self._alignment["scale"]
-                )
             key = Path(m.filename).name  # normalize in case m.filename ever carries a folder too
             if key in table.index:
                 row = table.loc[key]
