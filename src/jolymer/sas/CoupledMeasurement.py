@@ -87,11 +87,11 @@ class AlignSAXS_WAXS:
         outdict['qw_ov'] = q_w[mask_w]
         outdict['Iw_ov'] = I_w[mask_w, :]
         interp = interp1d(q_s, I_s, axis=0, bounds_error=False,
-                          fill_value=np.nan, kind='cubic')
+                          fill_value=np.nan, kind='linear')
         Is_ov = interp(outdict['qw_ov'])
         sigma_w_ov = sigma_w[mask_w, :]
         interpw = interp1d(q_s, sigma_s, axis=0, bounds_error=False,
-                           fill_value=np.nan, kind='cubic')
+                           fill_value=np.nan, kind='linear')
         sigma_s_ov = interpw(outdict['qw_ov'])
         outdict['Is_ov'] = Is_ov
         outdict['sigma_s_ov'] = sigma_s_ov

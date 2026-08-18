@@ -19,7 +19,16 @@ from matplotlib.figure import Figure
 import matplotlib.ticker
 
 # --- IPython console (Spyder-style) ---
-from jolymer.gui.regals.console.ipython_widget import IPythonConsole
+import sys
+
+# if getattr(sys, "frozen", False):
+if True:
+    from jolymer.gui.regals.console.ipython_widget import SimpleConsole
+    Console = SimpleConsole
+else:
+    from jolymer.gui.regals.console.ipython_widget import IPythonConsole
+    Console = IPythonConsole
+
 
 from jolymer.sas.CoupledMeasurement import CoupledMeasurement, ms_from_folder
 from jolymer.uv.onlineUV import onlineUV
@@ -154,7 +163,7 @@ class SecMainWindow(QMainWindow):
         right_splitter.addWidget(self.toolbar)
         right_splitter.addWidget(self.canvas)
 
-        self.console = IPythonConsole(namespace={
+        self.console = Console(namespace={
             "state": self.state,
             "cm": self.state.CM,
             "np": np})
