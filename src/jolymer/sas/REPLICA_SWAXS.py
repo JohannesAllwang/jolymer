@@ -21,7 +21,7 @@ from pathlib import Path
 import MDAnalysis as mda
 
 from .. import os_utility as osu
-from .GROMACS_SWAXS import GROMACS_SWAXS
+from .GROMACS_SWAXS import GROMACS_SWAXS, _analysis_dict
 from .SAXS_Measurement import SAXS_Measurement
 from .. import jocolors
 
@@ -415,11 +415,17 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         ax.legend()
         return popt
 
-    def run_analysis(self, analysis_name, *args, **kwargs):
+    def run_analysis(self, analysis, *args, **kwargs):
+        if isinstance(analysis, str):
+            An = _analysis_dict[analysis]()
+            analysis_name = analysis
+        else:
+            An = analysis
+            analysis_name = An.name
         dfs = []
         for irep, gs in enumerate(self.gss):
             results, aux_results = gs.run_analysis(
-                analysis_name, *args, **kwargs
+                An, *args, **kwargs
             )
             gs.analysis_results[analysis_name] = [results, aux_results]
             results = results.copy()
@@ -468,7 +474,11 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         def load_u(gs):
             gs.to_sol()
             return gs.get_u()
-        universes = [load_u(gs) for gs in self.gss]
+        universes = []
+        for gs in self.gss:
+            try:
+                u = load_u(gs)
+            except
         outdir = self.get_bins_outdir()
         osu.create_path(outdir)
         lookup = []
@@ -565,7 +575,8 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                 print('RG', rgdict['Rg'])
                 ax.errorbar(df.q, df.I, label=label, marker='')
 
-    def plot_bins(self, parameters, H, edges, axes=None):
+    def plot_bins(self, parameters, H, edges, axes=None,
+                  Nmin=100):
         from itertools import combinations
         import copy
         pairs = list(combinations(range(len(parameters)), 2))
@@ -593,7 +604,7 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                 H2 = H2.sum(axis=axis)
             cmap = copy.copy(plt.cm.viridis)
             cmap.set_bad("white")
-            Hplot = np.ma.masked_less(H2, 100)
+            Hplot = np.ma.masked_less(H2, Nmin)
             im = ax.pcolormesh(
                 edges[i],
                 edges[j],
