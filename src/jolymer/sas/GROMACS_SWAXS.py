@@ -329,10 +329,16 @@ class GROMACS_SWAXS(SAXS_Measurement):
             if not rebuild:
                 print('u was already loaded')
                 return self.u
-        from MDAnalysis.transformations import unwrap, center_in_box, wrap
-        from MDAnalysis.analysis import align
         npt_path = Path(self.mdpath, self.npt_filename)
         xtc_path = Path(self.mdpath, self.xtc_filename)
+        if not npt_path.exists():
+            print(f"NPT topology not found: {npt_path}")
+            return None
+        if not xtc_path.exists():
+            print(f"Trajectory not found: {xtc_path}")
+            return None
+        from MDAnalysis.transformations import unwrap, center_in_box, wrap
+        from MDAnalysis.analysis import align
         print('loading', xtc_path)
         u = mda.Universe(npt_path, xtc_path)
         nucleic = u.select_atoms("nucleic")
@@ -1149,7 +1155,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
             self.to_sol()
         u = self.get_u()
         results, aux_results = An.run(u, *args, **kwargs)
-        save_path = self.get_analysis_filename(analysis_name)
+        save_path = self.get_analysis_filename(An.name)
         An.save_json(save_path, results, aux_results=aux_results)
         return results, aux_results
 
@@ -1462,10 +1468,21 @@ class DomainAngleAnalysis(Analysis):
         d1 = solute.select_atoms(self.domain1_sel)
         d2 = solute.select_atoms(self.domain2_sel)
         d3 = solute.select_atoms(self.domain3_sel)
-        axis1 = self._oriented_axis(d1, d2)
-        axis3 = self._oriented_axis(d3, d2)
-        cos_angle = np.dot(axis1, axis3)
-        angle = np.degrees(np.arccos(np.clip(cos_angle, -1.0, 1.0)))
+        com1 = d1.center_of_mass()
+        com2 = d2.center_of_mass()
+        com3 = d3.center_of_mass()
+        # axis1 = self._oriented_axis(d1, d2)
+        # axis3 = self._oriented_axis(d3, d2)
+        v1 = com1 - com2
+        v3 = com3 - com2
+        cos_angle = np.dot(v1, v3) / (
+            np.linalg.norm(v1) * np.linalg.norm(v3)
+        )
+        angle = np.degrees(
+            np.arccos(np.clip(cos_angle, -1.0, 1.0))
+        )
+        # cos_angle = np.dot(axis1, axis3)
+        # angle = np.degrees(np.arccos(np.clip(cos_angle, -1.0, 1.0)))
         dist_12 = np.linalg.norm(d1.center_of_mass() - d2.center_of_mass())
         dist_13 = np.linalg.norm(d1.center_of_mass() - d3.center_of_mass())
         dist_23 = np.linalg.norm(d2.center_of_mass() - d3.center_of_mass())
@@ -1483,9 +1500,9 @@ class DomainAngleAnalysis(Analysis):
     @staticmethod
     def _oriented_axis(domain, ref_domain):
         """Long axis of `domain`, sign-fixed to point away from ref_domain."""
-        axis = domain.principal_axes()[0]
-        axis = axis / np.linalg.norm(axis)
+        # axis = domain.principal_axes()[0]
+        # axis = axis / np.linalg.norm(axis)
         pointing = domain.center_of_mass() - ref_domain.center_of_mass()
-        if np.dot(axis, pointing) < 0:
-            axis = -axis
-        return axis
+        # if np.dot(axis, pointing) < 0:
+        #     axis = -axis
+        return pointing
