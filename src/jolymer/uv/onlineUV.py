@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import matplotlib
 from datetime import datetime, timedelta
 from dateutil import parser as dateutil_parser
 
@@ -379,7 +380,7 @@ class onlineUV(Measurement):
             matrix_sorted = scaled_matrix[sort_idx]
             # colors = plu.cm_for_l('plasma', wavelengths)
             norm = plt.Normalize(wl_min, wl_max)
-            comap = cm.get_cmap(cmap)
+            comap = matplotlib.colormaps[cmap]
             for wl, absorbance in zip(wavelengths_sorted, matrix_sorted):
                 color = comap(norm(wl))
                 ax.plot(time_axis, absorbance, color=color)
