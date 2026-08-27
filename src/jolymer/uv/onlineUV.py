@@ -35,13 +35,14 @@ class onlineUV(Measurement):
     refwl: float=280
     outwl: float=280
     alignment_time: float=280
+    ellution_path: str="ellution"
 
     def __post_init__(self, sample:bioMOLECULE=ac6):
         # Example: "20221117_AC6_0_1_34ul_c01_000001.spc"
-        self.name = self.spec_filename.split("01")[0]
+        self.name = self.spec_filename.split(".spc")[0]
         self.filename = f"{self.name}_onlineUV.dat"
         self.sample = sample
-        osu.create_path("ellution")
+        osu.create_path(self.ellution_path)
 
     def get_log_filepath(self, spec_filename=None):
         if spec_filename is None:
@@ -138,7 +139,7 @@ class onlineUV(Measurement):
         return Path(self.path) / self.spec_filename
 
     def get_filename(self):
-        return Path("ellution") / self.filename
+        return Path(self.ellution_path) / self.filename
 
     def get_data(self):
         """Convert .spc → .dat, then read the data."""

@@ -10,16 +10,18 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QFormLayout,
     QPushButton, QLineEdit, QFileDialog, QSplitter,
     QDoubleSpinBox, QCheckBox, QStyle, QSizePolicy, QLabel,
-    QToolButton, QScrollArea, QComboBox
+    QToolButton, QScrollArea, QComboBox, QDialog
 )
 
 # --- matplotlib ---
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 import matplotlib.ticker
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (registers 3d projection)
 
 # --- IPython console (Spyder-style) ---
 import sys
+import shutil
 
 # if getattr(sys, "frozen", False):
 if True:
@@ -35,6 +37,33 @@ from jolymer.uv.onlineUV import onlineUV
 from jolymer.sas.SEC_SWAXS import SEC_SWAXS
 
 import traceback
+
+class Uv3DPlotDialog(QDialog):
+    def __init__(self, wl, time, data, title="UV 3D plot", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(900, 700)
+
+        layout = QVBoxLayout(self)
+        self.canvas = MplCanvas()
+        from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
+        toolbar = NavigationToolbar2QT(self.canvas, self)
+        layout.addWidget(toolbar)
+        layout.addWidget(self.canvas)
+
+        self.fig = self.canvas.fig
+        self.fig.clear()
+        ax = self.fig.add_subplot(111, projection="3d")
+
+        # data shape: (n_wl, n_time) -> meshgrid needs (n_time, n_wl) matching X, Y
+        T, WL = np.meshgrid(time, wl)  # T, WL shape: (n_wl, n_time)
+        ax.plot_surface(T, WL, data, cmap="viridis", linewidth=0, antialiased=True)
+
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Wavelength (nm)")
+        ax.set_zlabel("Absorbance")
+        self.fig.tight_layout()
+        self.canvas.draw_idle()
 
 # -----------------------------
 # Small reusable "path + browse button" widget
@@ -206,6 +235,11 @@ class SecMainWindow(QMainWindow):
         quit_action.setShortcut("Ctrl+Q")
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
+        ## uv menu
+        uv_menu = menubar.addMenu("&UV")
+        plot3d_action = QAction("&3D plot", self)
+        plot3d_action.triggered.connect(self.show_uv_3d_plot)
+        uv_menu.addAction(plot3d_action)
 
     def save_state(self):
         path, _ = QFileDialog.getSaveFileName(
@@ -499,6 +533,12 @@ class SecMainWindow(QMainWindow):
                    angular_unit='A')
             self.state.CM.saxs_list = ms
             self._log(f"saxs loaded to")
+            if not self.state.CM.uv is None:
+                old_uv_filepath = self.state.CM.uv.get_filename()
+                self.state.CM.uv.ellution_path = self.state.CM.saxs_list[0].path
+                new_uv_filepath = self.state.CM.uv.get_filename()
+                if old_uv_filepath != new_uv_filepath:
+                    shutil.copy2(old_uv_filepath, new_uv_filepath)
         except Exception as e:
             self._log_exception(f"Error running autorg:", e)
 
@@ -573,6 +613,7 @@ class SecMainWindow(QMainWindow):
         try:
             if self.state.CM.uv is None:
                 raise ValueError("Load UV data first")
+            self.state.CM.uv.ellution_path = self.state.CM.saxs_list[0].path
             directory = Path(self.saxs_dir.text())
             autorg_path = directory / self.autorg_name.text()
             if not autorg_path.exists():
@@ -580,6 +621,7 @@ class SecMainWindow(QMainWindow):
             autorg_df = self.state.CM.load_autorg(
                 autorg_filename=self.autorg_name.text(),
                 directory=directory,
+                wavelength=[self.uv_refwl],
             )
             fig = self.canvas.fig
             fig.clear()
@@ -592,8 +634,11 @@ class SecMainWindow(QMainWindow):
                 ax=axU,
                 alignment_time=self.uv_alignment_time.value(),
             )
+            dfUV = self.state.CM.get_dfUV()
             ax.plot(autorg_df.time, autorg_df.Rg, color="green", label="Rg")
             print(autorg_df)
+            # autorg_df.to_csv(Path(self.state.CM.saxs_list[0].path, "autorg-UV.dat"), sep='\t', index=False)
+            dfUV.to_csv(Path(self.state.CM.saxs_list[0].path, f"UV{self.state.CM.uv.refwl}.dat"), sep='\t', index=False)
             ax.set_ylabel(r"$R_g$ (nm)", color="green")
             ax.tick_params(axis="y", colors="green")
             axI = ax.twinx()
@@ -642,6 +687,28 @@ class SecMainWindow(QMainWindow):
             self._log("Plot updated.")
         except Exception as e:
             self._log_exception(f"Error updating plot:", e)
+
+    def show_uv_3d_plot(self):
+        try:
+            uv = self.state.CM.uv
+            if uv is None:
+                raise ValueError("Load UV data first")
+            df = uv.load_data()
+            abs_cols = [c for c in df.columns if c.startswith("Abs")]
+            wl = df["wl"].to_numpy(dtype=float)
+            data = df[abs_cols].to_numpy(dtype=float)  # shape (n_wl, n_time)
+            time = np.asarray(uv.get_time(), dtype=float)
+            if len(time) != data.shape[1]:
+                raise ValueError(
+                    f"Time length ({len(time)}) doesn't match number of "
+                    f"absorbance columns ({data.shape[1]})"
+                )
+            dlg = Uv3DPlotDialog(wl=wl, time=time, data=data, parent=self)
+            dlg.show()
+            self._uv_3d_dialog = dlg
+            self._log("Opened UV 3D plot.")
+        except Exception as e:
+            self._log_exception("Error showing UV 3D plot:", e)
 
 
 def main():

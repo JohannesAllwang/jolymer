@@ -623,7 +623,8 @@ class GROMACS_SWAXS(SAXS_Measurement):
         T, Q = np.meshgrid(time_vals, q_vals, indexing="ij")
         fig = plt.figure(figsize=figsize)
         ax = fig.add_subplot(111, projection='3d')
-        surf = ax.plot_surface(T, Q, Z, cmap=cmap)
+        surf = ax.plot_surface(T, Q, Z, cmap=cmap,
+                               rasterized=True)
         ax.invert_yaxis()
         ax.set_xlabel("Time [ns]")
         ax.set_ylabel("$q$ [Å$^{-1}$]")

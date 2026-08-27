@@ -476,9 +476,11 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
             return gs.get_u()
         universes = []
         for gs in self.gss:
-            try:
-                u = load_u(gs)
-            except
+            u = load_u(gs)
+            if not u is None:
+                universes.append(u)
+            else:
+                print(gs.name, 'no universe found')
         outdir = self.get_bins_outdir()
         osu.create_path(outdir)
         lookup = []
@@ -500,9 +502,13 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                 lookup.append(lookup_row)
                 if save:
                     for _, row in subset.iterrows():
-                        u = universes[int(row["irep"])]
-                        u.trajectory[int(row["frame"])]
-                        W.write(u.atoms)
+                        try:
+                            u = universes[int(row["irep"])]
+                            u.trajectory[int(row["frame"])]
+                            W.write(u.atoms)
+                        except Exception as e:
+                            print("could not write line")
+                            print(e)
         lookup_df = pd.DataFrame(lookup)
         lookup_df.to_csv(
             outdir / "lookup.dat",
@@ -511,7 +517,11 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         )
         return lookup_df
 
-    def get_bins_final(self, parameters):
+    def save_lookup(self, df, parameters):
+        pass
+
+    def get_bins_final(self, parameters,
+                       prefix='rerun_'):
         bin_column = '_'.join(parameters)
         bin_column = f'bin_{bin_column}'
         gs = self.gss[0]
@@ -532,10 +542,13 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         for _, row in lookup_df.iterrows():
             bin_name = row["file"].split(f"{parameters[-1]}_")[1].split(".xtc")[0]
             dfd = gs.get_data()
-            dfg = gs.get_gromacs(
-                path=outdir,
-                filename=f"rerun_{bin_column}_{bin_name}_final.xvg"
-            )
+            try:
+                dfg = gs.get_gromacs(
+                    path=outdir,
+                    filename=f"{prefix}{bin_column}_{bin_name}_final.xvg"
+                )
+            except:
+                continue
             dfgs = gs.scale_and_offset_fit(dfd, dfg)["df"]
             par_values = row[parameters].tolist()
             outdict["dfs"].append(dfgs)
@@ -545,12 +558,14 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
 
     def plot_bins_final(self, parameters,
                         ranges={},
+                        prefix='rerun_',
                         ax=None):
         if ax is None:
             fig, ax = plt.subplots()
         else:
             fig = ax.get_figure()
-        pardfdict = self.get_bins_final(parameters)
+        pardfdict = self.get_bins_final(parameters,
+                                        prefix=prefix)
         gs = self.gss[0]
         print(parameters.index('Rg'))
         for df, bin, par_values in zip(
@@ -576,7 +591,7 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                 ax.errorbar(df.q, df.I, label=label, marker='')
 
     def plot_bins(self, parameters, H, edges, axes=None,
-                  Nmin=100):
+                  Nmin=100, label_dict={}):
         from itertools import combinations
         import copy
         pairs = list(combinations(range(len(parameters)), 2))
@@ -613,8 +628,14 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                 cmap=cmap
             )
             fig.colorbar(im, ax=ax, label="Frames")
-            ax.set_xlabel(parameters[i])
-            ax.set_ylabel(parameters[j])
+            xlabel = parameters[i]
+            if parameters[i] in label_dict.keys():
+                xlabel = label_dict[parameters[i]]
+            ylabel = parameters[j]
+            if parameters[j] in label_dict.keys():
+                ylabel = label_dict[parameters[j]]
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
         return fig
 
     @staticmethod

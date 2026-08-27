@@ -374,6 +374,8 @@ class CoupledMeasurement:
         self._alignment["qstar"] = self.qstar
         self._alignment["qmin"] = self.qmin
         self._alignment["qmax"] = self.qmax
+        self._alignment["shift"] = 0
+        self._alignment["scale"] = 1
 
     def build_saxs_matrix(self):
         I_list = []
@@ -462,6 +464,12 @@ class CoupledMeasurement:
         else:
             raise ValueError(f"Unknown UV preprocessing mode: {mode}")
 
+    def get_dfUV(self):
+        dfUV = self.uv.get_scaled_Abs(refwl=self.uv.refwl,
+                                      outwl=self.uv.outwl,
+                                      alignment_time=self.uv.alignment_time)
+        return dfUV
+
     def align_uv_to_saxs(
         self,
         saxs_kind="I0",
@@ -474,9 +482,7 @@ class CoupledMeasurement:
         I0_min=0,
         scale0shift0=[2.2, -1400],
     ):
-        dfUV = self.uv.get_scaled_Abs(refwl=self.uv.refwl,
-                                      outwl=self.uv.outwl,
-                                      alignment_time=self.uv.alignment_time)
+        dfUV = self.get_dfUV()
         self.uv.df = dfUV
         dfSAXS = self.get_saxs_scalar(kind=saxs_kind, qstar=qstar, qmin=qmin, qmax=qmax,
                                       load=load)
@@ -531,7 +537,8 @@ class CoupledMeasurement:
         )
         return output
 
-    def load_autorg(self, autorg_filename="autorg.dat", directory=None):
+    def load_autorg(self, autorg_filename="autorg.dat", directory=None,
+                    wavelength=[]):
         """
         Read an autorg.dat produced by `run_autorg` and attach Rg/I0 to each
         measurement in `self.saxs_list`.
