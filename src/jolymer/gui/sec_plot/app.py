@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 
 # --- matplotlib ---
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-from matplotlib.ticker import MultipleLocator, FuncFormatter
+from matplotlib.ticker import AutoLocator, MultipleLocator, FuncFormatter, FixedLocator
 from matplotlib.figure import Figure
 import matplotlib.ticker
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (registers 3d projection)
@@ -645,7 +645,7 @@ class SecMainWindow(QMainWindow):
             axI = ax.twinx()
             axI.spines["right"].set_position(("outward", 50))
             axI.plot(autorg_df.time, autorg_df.I0, color="black", label="I(0) (cm$^{-1}$)")
-            axI.set_ylabel(r"$I(0)$", color="black")
+            axI.set_ylabel(r"$I(0)$ (cm$^{-1})$", color="black")
             axI.tick_params(axis="y", colors="black")
             xmin, xmax = self.xmin.value(), self.xmax.value()
             if xmax > xmin:
@@ -675,7 +675,18 @@ class SecMainWindow(QMainWindow):
                 ax_frame.set_xlim(ax.get_xlim())
                 update_frame_axis(ax)
             ax_frame.set_xlim(ax.get_xlim())
-            ax.xaxis.set_major_locator(MultipleLocator(30))
+            # ax.xaxis.set_minor_locator(MultipleLocator(30))
+            # ax.xaxis.set_major_locator(AutoLocator())
+            target_labels = 8
+            xmin, xmax = ax.get_xlim()
+            tick_times = np.arange(
+                np.ceil(xmin / 30) * 30,
+                xmax + 30,
+                30
+            )
+            step = max(1, int(np.ceil(len(tick_times) / target_labels)))
+            ax.xaxis.set_major_locator(FixedLocator(tick_times[::step]))
+            ax.xaxis.set_minor_locator(MultipleLocator(30))
             if self.minutes_check.isChecked():
                 ax.xaxis.set_major_formatter(
                     FuncFormatter(lambda x, pos: x / 60)
