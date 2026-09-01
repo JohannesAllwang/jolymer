@@ -1413,6 +1413,7 @@ class RadiusAnalysis(Analysis):
         "frame",
         "Rg",
         "Ree",
+        "Rg_chain",
     ])
     df_pars: list[str] = field(default_factory=list)
     name: str = "Radius"
@@ -1424,18 +1425,19 @@ class RadiusAnalysis(Analysis):
     def calc_function(self, solute, bb_atoms, solvent, ions, ts):
         Rg = solute.radius_of_gyration()
         segids = np.unique(bb_atoms.segids)
-        Ree = [
-            np.linalg.norm(
-                bb_atoms.select_atoms(f"segid {segid}").positions[-1]
-                - bb_atoms.select_atoms(f"segid {segid}").positions[0]
-            )
-            for segid in segids
-        ]
+        Ree = []
+        Rg_chain = []
+        for segid in segids:
+            chain_bb = bb_atoms.select_atoms(f"segid {segid}")
+            chain_solute = solute.select_atoms(f"segid {segid}")
+            Ree.append(np.linalg.norm(chain_bb.positions[-1] - chain_bb.positions[0]))
+            Rg_chain.append(chain_solute.radius_of_gyration())
         results = {
             "time": ts.time,
             "frame": ts.frame,
             "Rg": Rg,
             "Ree": Ree,
+            "Rg_chain": Rg_chain,
         }
         frame_aux = {}
         return results, frame_aux

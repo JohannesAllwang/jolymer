@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 
 # --- matplotlib ---
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.ticker import MultipleLocator, FuncFormatter
 from matplotlib.figure import Figure
 import matplotlib.ticker
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (registers 3d projection)
@@ -637,16 +638,15 @@ class SecMainWindow(QMainWindow):
             dfUV = self.state.CM.get_dfUV()
             ax.plot(autorg_df.time, autorg_df.Rg, color="green", label="Rg")
             print(autorg_df)
-            # autorg_df.to_csv(Path(self.state.CM.saxs_list[0].path, "autorg-UV.dat"), sep='\t', index=False)
+            autorg_df.to_csv(Path(self.state.CM.saxs_list[0].path, "autorg-UV.dat"), sep='\t', index=False)
             dfUV.to_csv(Path(self.state.CM.saxs_list[0].path, f"UV{self.state.CM.uv.refwl}.dat"), sep='\t', index=False)
-            ax.set_ylabel(r"$R_g$ (nm)", color="green")
+            ax.set_ylabel(r"$R_g$ ($\AA$)", color="green")
             ax.tick_params(axis="y", colors="green")
             axI = ax.twinx()
             axI.spines["right"].set_position(("outward", 50))
-            axI.plot(autorg_df.time, autorg_df.I0, color="black", label="I(0)")
+            axI.plot(autorg_df.time, autorg_df.I0, color="black", label="I(0) (cm$^{-1}$)")
             axI.set_ylabel(r"$I(0)$", color="black")
             axI.tick_params(axis="y", colors="black")
-            ax.set_xlabel("Time (s)")
             xmin, xmax = self.xmin.value(), self.xmax.value()
             if xmax > xmin:
                 ax.set_xlim(xmin, xmax)
@@ -675,6 +675,17 @@ class SecMainWindow(QMainWindow):
                 ax_frame.set_xlim(ax.get_xlim())
                 update_frame_axis(ax)
             ax_frame.set_xlim(ax.get_xlim())
+            ax.xaxis.set_major_locator(MultipleLocator(30))
+            if self.minutes_check.isChecked():
+                ax.xaxis.set_major_formatter(
+                    FuncFormatter(lambda x, pos: x / 60)
+                )
+                ax.set_xlabel("Time (min)")
+            else:
+                ax.xaxis.set_major_formatter(
+                    FuncFormatter(lambda x, pos: x)
+                )
+                ax.set_xlabel("Time (s)")
             update_frame_axis(ax)
             ax.callbacks.connect("xlim_changed", on_xlim_changed)
             ax_frame.set_xlabel("X-ray frame")
