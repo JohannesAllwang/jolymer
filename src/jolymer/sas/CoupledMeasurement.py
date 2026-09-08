@@ -362,6 +362,7 @@ class CoupledMeasurement:
     qmax: float = 0.5
     qstar: float = 0.1
     saxs_kind: str = 'autorg'
+    autorg_filename: str = 'autorg.dat'
 
     def __post_init__(self):
         self._I = None
@@ -394,9 +395,9 @@ class CoupledMeasurement:
         self._x = np.arange(self._I.shape[1]) * 2.1
         return self._q, self._I, self._sigma, self._x
 
-    def get_saxs_scalar(self, kind="I0", qstar=0.1,
-                     qmin=0.04, qmax=0.4, load=False,
-                        autorg_filename="autorg.dat"):
+    def get_saxs_scalar(self, kind="autorg", qstar=0.1,
+                        autorg_filename=None,
+                        qmin=0.04, qmax=0.4, load=False):
         """
         Returns frame, time, I0 (+ optionally errI0) for the saxs series.
         New: kind="autorg" sources I0/Rg from ATSAS `autorg` output
@@ -406,6 +407,8 @@ class CoupledMeasurement:
         autorg itself decided the Guinier region was, rather than the fixed
         (qmin, qmax) bounds / bounded fit used by kind="I0".
         """
+        if autorg_filename is None:
+            autorg_filename = self.autorg_filename
         q = self._q if self._q is not None else self.build_saxs_matrix()[0]
         if kind == "autorg":
             autorg_path = Path(self.get_saxs_path()) / autorg_filename
@@ -447,6 +450,43 @@ class CoupledMeasurement:
                 'errI0': errI0s})
         else:
             raise ValueError(f"Unknown SAXS scalar: {kind}")
+
+    def reload_saxs(self, autorg_filename=None):
+        """
+        Permanently move the UV<->SAXS time alignment onto the SAXS
+        measurements themselves: each m.time is remapped from raw SAXS
+        time into UV time units, and self._alignment is reset to the
+        identity (scale=1, shift=0).
+        Only the time axis is touched -- I, sigma, Rg, I0 etc. on each
+        measurement are left exactly as they were. Call this once you're
+        happy with an alignment (e.g. after align_uv_to_saxs /
+        refine_uv_alignment*), so that afterwards SAXS and UV share a
+        single, UV-derived time axis and no further scale/shift is needed
+        (fit_gauss_peaks, get_saxs_scalar, etc. all just work in that
+        common frame).
+        Returns the (now identity) alignment dict.
+        """
+        if autorg_filename is None:
+            autorg_filename = self.autorg_filename
+        scale = self._alignment["scale"]
+        shift = self._alignment["shift"]
+        if scale == 1.0 and shift == 0.0:
+            # nothing to do -- avoid silently "reloading" for no reason
+            return self._alignment
+        for m in self.saxs_list:
+            m.time = (m.time - shift) / scale
+        # anything cached against the old time axis is now stale
+        self._uv_on_saxs = None
+        self._autorg_df = None
+        self._alignment["scale"] = 1.0
+        self._alignment["shift"] = 0.0
+        self._alignment["reloaded_from"] = {"scale": scale, "shift": shift}
+        # refresh the cached autorg table (frame/time columns) against
+        # the new m.time values, if that's the scalar source in use
+        if self._alignment.get("saxs_kind", self.saxs_kind) == "autorg":
+            self.load_autorg(autorg_filename=autorg_filename)
+        return self._alignment
+
 
     def preprocess_uv(dfUV, mode="identity", **kwargs):
         """
@@ -537,7 +577,7 @@ class CoupledMeasurement:
         )
         return output
 
-    def load_autorg(self, autorg_filename="autorg.dat", directory=None,
+    def load_autorg(self, autorg_filename=None, directory=None,
                     wavelength=[]):
         """
         Read an autorg.dat produced by `run_autorg` and attach Rg/I0 to each
@@ -549,6 +589,8 @@ class CoupledMeasurement:
         silently dropping every row (Rg/I0 all NaN) whenever that prefix was
         present.
         """
+        if autorg_filename is None:
+            autorg_filename = self.autorg_filename
         saxs_path = Path(directory) if directory is not None else self.get_saxs_path()
         autorg_path = Path(saxs_path, autorg_filename)
         table = parse_autorg_table(autorg_path).set_index("filename")
@@ -664,6 +706,355 @@ class CoupledMeasurement:
         cols = ["wl"] + [f"Abs{i}" for i in range(len(saxs_time))]
         return pd.DataFrame(np.column_stack([wl, uv_on_saxs]), columns=cols)
 
+    def fit_gauss_peaks(
+        self,
+        n_peaks,
+        wl=280,
+        p0=None,
+        fit_baseline=False,
+    ):
+        """
+        Simultaneously fit SAXS I0 and UV absorbance traces as a sum
+        of Gaussian elution peaks.
+        All channels share the same peak centers and widths, while
+        each channel has its own peak amplitudes.
+        Parameters
+        ----------
+        n_peaks : int
+            Number of Gaussian peaks.
+        wl : int, float, or list[int, float]
+            UV wavelength(s) to include.
+        p0 : dict, optional
+            Initial parameter guesses.
+            Example:
+                {
+                    "centers": [100, 150, 200],
+                    "sigmas": [10, 10, 10],
+                }
+        fit_baseline : bool
+            Whether to fit a constant baseline independently for each
+            channel.
+        Returns
+        -------
+        dict
+            Fitted parameters and reconstructed curves.
+        """
+        from scipy.optimize import least_squares
+        # ------------------------------------------------------------
+        # Load data
+        # ------------------------------------------------------------
+        dfX = self.get_saxs_scalar(
+            self._alignment["saxs_kind"],
+            qmin=self._alignment["qmin"],
+            qmax=self._alignment["qmax"],
+            qstar=self._alignment["qstar"],
+            load=True,
+        )
+        dfUV = self.uv.get_Abs_wl(wl)
+        tX = dfX["time"].to_numpy()
+        yX = dfX["I0"].to_numpy()
+        # UV is still on its own time axis -> transform to SAXS time
+        # shift = self._alignment["shift"]
+        # scale = self._alignment["scale"]
+        shift = 0
+        scale = 1
+        tUV = scale * dfUV["time"].to_numpy() + shift
+        # print(dfX.time, tUV)
+        # Interpolate UV onto SAXS time points
+        from scipy.interpolate import interp1d
+        uv_cols = [
+            col for col in dfUV.columns
+            if col.startswith("Abs")
+        ]
+        uv_interp = {}
+        for col in uv_cols:
+            f = interp1d(
+                tUV,
+                dfUV[col].to_numpy(),
+                bounds_error=False,
+                fill_value=0.0,
+                kind="cubic",
+            )
+            uv_interp[col] = f(tX)
+        # ------------------------------------------------------------
+        # Channels
+        # ------------------------------------------------------------
+        channels = {
+            "I0": yX,
+            **uv_interp,
+        }
+        names = list(channels.keys())
+        y = np.array([channels[name] for name in names])
+        n_channels = len(names)
+        # ------------------------------------------------------------
+        # Initial guesses
+        # ------------------------------------------------------------
+        if p0 is None:
+            tmin = tX[np.argmax(yX > 0)]
+            tmax = tX[np.where(yX > 0)[0][-1]]
+            centers0 = np.linspace(tmin, tmax, n_peaks)
+            sigmas0 = np.full(n_peaks, (tmax - tmin) / (4 * n_peaks))
+        else:
+            centers0 = np.asarray(p0["centers"], dtype=float)
+            sigmas0 = np.asarray(p0["sigmas"], dtype=float)
+        amplitudes0 = np.zeros((n_channels, n_peaks))
+        for j, yy in enumerate(y):
+            for k, center in enumerate(centers0):
+                idx = np.argmin(np.abs(tX - center))
+                val = yy[idx]
+                amplitudes0[j, k] = val if (np.isfinite(val) and val > 0) else 0.0
+
+        baselines0 = np.array([
+            np.nanpercentile(yy, 5) if np.any(np.isfinite(yy)) else 0.0
+            for yy in y
+        ])
+        p0_vec = np.concatenate([
+            centers0,
+            sigmas0,
+            amplitudes0.ravel(),
+            baselines0 if fit_baseline else [],
+        ])
+        # ------------------------------------------------------------
+        # Model
+        # ------------------------------------------------------------
+        def model(params):
+            i = 0
+            centers = params[i:i+n_peaks]
+            i += n_peaks
+            sigmas = params[i:i+n_peaks]
+            i += n_peaks
+            amplitudes = params[
+                i:i + n_channels * n_peaks
+            ].reshape(n_channels, n_peaks)
+            i += n_channels * n_peaks
+            if fit_baseline:
+                baselines = params[i:i+n_channels]
+            else:
+                baselines = np.zeros(n_channels)
+            result = np.zeros((n_channels, len(tX)))
+            for k in range(n_peaks):
+                gaussian = np.exp(
+                    -(tX - centers[k])**2 /
+                    (2 * sigmas[k]**2)
+                )
+                result += amplitudes[:, k, None] * gaussian
+            result += baselines[:, None]
+            return result
+        # ------------------------------------------------------------
+        # Residual
+        # ------------------------------------------------------------
+        finite_mask = np.isfinite(y)          # shape (n_channels, len(tX))
+        y_filled = np.where(finite_mask, y, 0.0)   # avoid 0*nan inside the objective
+        def residual(params):
+            diff = model(params) - y_filled
+            diff = np.where(finite_mask, diff, 0.0)   # zero out unobserved points
+            return diff.ravel()
+        # ------------------------------------------------------------
+        # Bounds
+        # ------------------------------------------------------------
+        lower = np.concatenate([
+            np.full(n_peaks, tX.min()),
+            np.full(n_peaks, 0.01),
+            np.zeros(n_channels * n_peaks),
+            np.full(n_channels, -np.inf) if fit_baseline else [],
+        ])
+        upper = np.concatenate([
+            np.full(n_peaks, tX.max()),
+            np.full(n_peaks, tX.max() - tX.min()),
+            np.full(n_channels * n_peaks, np.inf),
+            np.full(n_channels, np.inf) if fit_baseline else [],
+        ])
+        # ------------------------------------------------------------
+        # Fit
+        # ------------------------------------------------------------
+        result = least_squares(
+            residual,
+            p0_vec,
+            bounds=(lower, upper),
+        )
+        # ------------------------------------------------------------
+        # Extract parameters
+        # ------------------------------------------------------------
+        params = result.x
+        i = 0
+        centers = params[i:i+n_peaks]
+        i += n_peaks
+        sigmas = params[i:i+n_peaks]
+        i += n_peaks
+        amplitudes = params[
+            i:i + n_channels * n_peaks
+        ].reshape(n_channels, n_peaks)
+        i += n_channels * n_peaks
+        if fit_baseline:
+            baselines = params[i:i+n_channels]
+        else:
+            baselines = np.zeros(n_channels)
+        fitted = model(params)
+        # ------------------------------------------------------------
+        # Return
+        # ------------------------------------------------------------
+        peaks = {}
+        for j, channel in enumerate(names):
+            peaks[channel] = {}
+            for k, (center, sigma) in enumerate(zip(centers, sigmas)):
+                gaussian = amplitudes[j, k] * np.exp(
+                    -(tX - center)**2 / (2 * sigma**2)
+                )
+                peaks[channel][f"peak_{k + 1}"] = gaussian
+        return {
+            "result": result,
+            "centers": centers,
+            "sigmas": sigmas,
+            "amplitudes": pd.DataFrame(
+                amplitudes,
+                index=names,
+                columns=[
+                    f"peak_{i+1}"
+                    for i in range(n_peaks)
+                ],
+            ),
+            "baselines": pd.Series(
+                baselines,
+                index=names,
+            ),
+            "time": tX,
+            "data": pd.DataFrame(
+                y.T,
+                index=tX,
+                columns=names,
+            ),
+            "fit": pd.DataFrame(
+                fitted.T,
+                index=tX,
+                columns=names,
+            ),
+            "peaks": peaks
+        }
+
+    def plot_gauss_peaks(self, fit):
+        import matplotlib.pyplot as plt
+        channels = list(fit["data"].columns)
+        fig, axes = plt.subplots(len(channels), 1, figsize=(7, 3 * len(channels)), sharex=True, squeeze=False)
+        axes = axes[:, 0]
+        time = fit["time"]
+        for i, channel in enumerate(channels):
+            ax = axes[i]
+            ax.plot(time, fit["data"][channel], label=channel)
+            for peak, curve in fit["peaks"][channel].items():
+                ax.plot(time, curve, ":", label=peak)
+            ax.plot(time, fit["fit"][channel], label="fit")
+            ax.set_ylabel(channel)
+            ax.legend()
+        axes[-1].set_xlabel("Time (s)")
+        fig.tight_layout()
+        return fig, axes
+
+
+    @staticmethod
+    def refine_uv_scale_shift(
+        dfUV,
+        dfSAXS,
+        uv_col="Abs",
+        saxs_col="I0",
+        min_t_saxs=0,
+        max_t_saxs=np.inf,
+        I0_min=0,
+        scale0=1.0,
+        shift0=0.0,
+        scale_bounds=(0.98, 1.02),
+        shift_bounds=(-10.0, 10.0),
+    ):
+        """
+        Local refinement of (scale, shift) together. Same correlation
+        objective as align_uv_df_to_saxs_df, but started from
+        (scale0, shift0) and optimized with L-BFGS-B instead of
+        differential_evolution -- appropriate once the alignment is
+        already close and you just want a small, fast, reproducible
+        correction rather than a full global search.
+        """
+        from scipy.optimize import minimize
+
+        t_saxs = dfSAXS["time"].to_numpy()
+        y_saxs = dfSAXS[saxs_col].to_numpy()
+        mask = (
+            (t_saxs >= min_t_saxs) &
+            (t_saxs <= max_t_saxs) &
+            (y_saxs >= I0_min)
+        )
+        t_saxs_m = t_saxs[mask]
+        y_saxs_m = y_saxs[mask]
+        t_uv = dfUV["time"].to_numpy()
+        y_uv = dfUV[uv_col].to_numpy()
+
+        y_saxs_n = (y_saxs_m - y_saxs_m.mean()) / y_saxs_m.std()
+
+        def loss(p):
+            a, b = p
+            f = interp1d(
+                a * t_uv + b,
+                y_uv,
+                kind="cubic",
+                bounds_error=False,
+                fill_value=0,
+            )
+            y_uv_i = f(t_saxs_m)
+            if np.std(y_uv_i) == 0:
+                return np.inf
+            y_uv_n = (y_uv_i - y_uv_i.mean()) / y_uv_i.std()
+            return -np.sum(y_saxs_n * y_uv_n)
+
+        res = minimize(
+            loss,
+            x0=[scale0, shift0],
+            bounds=[scale_bounds, shift_bounds],
+            method="L-BFGS-B",
+        )
+        a, b = res.x
+        score = -res.fun
+        return {
+            "method": "scale_shift_refinement",
+            "scale": float(a),
+            "shift": float(b),
+            "score": score,
+            "success": res.success,
+        }
+
+    def refine_uv_alignment_scale_shift(
+        self,
+        saxs_kind="autorg",
+        qstar=0.1,
+        qmin=0.04,
+        qmax=0.4,
+        load=True,
+        min_t_saxs=0,
+        max_t_saxs=np.inf,
+        I0_min=0,
+        scale_bounds=(0.98, 1.02),
+        shift_bounds=(-10.0, 10.0),
+    ):
+        """Instance wrapper for refine_uv_scale_shift, mirroring
+        refine_uv_alignment's wrapping of refine_uv_shift."""
+        dfUV = self.get_dfUV()
+        self.uv.df = dfUV
+        dfSAXS = self.get_saxs_scalar(
+            kind=saxs_kind, qstar=qstar, qmin=qmin, qmax=qmax, load=load,
+        )
+        refinement = self.refine_uv_scale_shift(
+            dfUV,
+            dfSAXS,
+            min_t_saxs=min_t_saxs,
+            max_t_saxs=max_t_saxs,
+            I0_min=I0_min,
+            scale0=self._alignment.get("scale", 1.0),
+            shift0=self._alignment.get("shift", 0.0),
+            scale_bounds=scale_bounds,
+            shift_bounds=shift_bounds,
+        )
+        self._alignment["shift"] = refinement["shift"]
+        self._alignment["scale"] = refinement["scale"]
+        self._alignment["refinement"] = refinement
+        return self._alignment
+
     def to_regals(self):
         dfX = self.get_saxs_scalar(self._alignment["saxs_kind"],
                                       qmin=self._alignment["qmin"],
@@ -713,7 +1104,7 @@ class CoupledMeasurement:
 
     def plot_uv_autorg(
         self,
-        autorg_name="autorg.dat",
+        autorg_name=None,
         pattern="GR_*.dat",
         wl_min=260,
         wl_max=290,
@@ -726,6 +1117,8 @@ class CoupledMeasurement:
         minutes=False,
         ax=None,
     ):
+        if autorg_name is None:
+            autorg_name = self.autorg_filename
         if ax is None:
             fig, ax = plt.subplots(figsize=(7, 3))
         autorg_path = Path(self.get_saxs_path()) / autorg_name
@@ -779,7 +1172,7 @@ class CoupledMeasurement:
         I0_min=0,
         preprocess_uv_mode="identity",
         preprocess_uv_kwargs=None,
-        scale_bounds=(0.99, 1.01),
+        scale_bounds=(0.95, 1.05),
         shift_bounds=(-3000.0, 3000.0),
         scale0shift0=[2.2, -1400],
     ):
@@ -918,3 +1311,151 @@ class CoupledMeasurement:
             "score": score,
             "success": res.success,
         }
+
+    @staticmethod
+    def refine_uv_scale_shift(
+        dfUV,
+        dfSAXS,
+        uv_col="Abs",
+        saxs_col="I0",
+        min_t_saxs=0,
+        max_t_saxs=np.inf,
+        I0_min=0,
+        scale0=1.0,
+        shift0=0.0,
+        scale_bounds=(0.98, 1.02),
+        shift_bounds=(-10.0, 10.0),
+    ):
+        """
+        Local refinement of (scale, shift) together. Same correlation
+        objective as align_uv_df_to_saxs_df, but started from
+        (scale0, shift0) and optimized with L-BFGS-B instead of
+        differential_evolution -- appropriate once the alignment is
+        already close and you just want a small, fast, reproducible
+        correction rather than a full global search.
+        """
+        from scipy.optimize import minimize
+
+        t_saxs = dfSAXS["time"].to_numpy()
+        y_saxs = dfSAXS[saxs_col].to_numpy()
+        mask = (
+            (t_saxs >= min_t_saxs) &
+            (t_saxs <= max_t_saxs) &
+            (y_saxs >= I0_min)
+        )
+        t_saxs_m = t_saxs[mask]
+        y_saxs_m = y_saxs[mask]
+        t_uv = dfUV["time"].to_numpy()
+        y_uv = dfUV[uv_col].to_numpy()
+
+        y_saxs_n = (y_saxs_m - y_saxs_m.mean()) / y_saxs_m.std()
+
+        def loss(p):
+            a, b = p
+            f = interp1d(
+                a * t_uv + b,
+                y_uv,
+                kind="cubic",
+                bounds_error=False,
+                fill_value=0,
+            )
+            y_uv_i = f(t_saxs_m)
+            if np.std(y_uv_i) == 0:
+                return np.inf
+            y_uv_n = (y_uv_i - y_uv_i.mean()) / y_uv_i.std()
+            return -np.sum(y_saxs_n * y_uv_n)
+
+        res = minimize(
+            loss,
+            x0=[scale0, shift0],
+            bounds=[scale_bounds, shift_bounds],
+            method="L-BFGS-B",
+        )
+        a, b = res.x
+        score = -res.fun
+        return {
+            "method": "scale_shift_refinement",
+            "scale": float(a),
+            "shift": float(b),
+            "score": score,
+            "success": res.success,
+        }
+
+    def _gauss_peaks_cost_at_alignment(self, scale, shift, n_peaks, wl, p0, fit_baseline):
+        """Run fit_gauss_peaks at a trial (scale, shift), restoring the
+        previous alignment afterwards. Returns (cost, fit_dict)."""
+        saved_scale = self._alignment["scale"]
+        saved_shift = self._alignment["shift"]
+        self._alignment["scale"] = scale
+        self._alignment["shift"] = shift
+        try:
+            fit = self.fit_gauss_peaks(n_peaks, wl=wl, p0=p0, fit_baseline=fit_baseline)
+        finally:
+            self._alignment["scale"] = saved_scale
+            self._alignment["shift"] = saved_shift
+        cost = float(np.sum(fit["result"].fun ** 2))
+        return cost, fit
+
+    def fit_gauss_peaks_refine_alignment(
+        self,
+        n_peaks,
+        wl=280,
+        p0=None,
+        fit_baseline=False,
+        scale_bounds=(0.95, 1.05),
+        shift_bounds=(-100.0, 100.0),
+        method="Nelder-Mead",
+        **minimize_kwargs,
+    ):
+        """
+        Jointly refine (scale, shift) and the Gaussian elution-peak
+        parameters: for every trial (scale, shift) the outer optimizer
+        proposes, fit_gauss_peaks re-fits peak centers/sigmas/amplitudes
+        from scratch, and the outer loop minimizes that fit's residual
+        sum-of-squares.
+        Meant to be used once the alignment is already close (e.g. right
+        after reload_saxs, scale=1/shift=0) -- it only searches within
+        scale_bounds/shift_bounds around the current alignment, it's not
+        a global search. Warm-starts each trial's peak fit from the
+        previous best centers/sigmas to keep it fast-ish.
+        Returns (best_fit, alignment) -- best_fit is the same dict
+        fit_gauss_peaks returns, for the winning (scale, shift), and
+        self._alignment is updated in place to that (scale, shift).
+        """
+        from scipy.optimize import minimize
+        scale0 = self._alignment.get("scale", 1.0)
+        shift0 = self._alignment.get("shift", 0.0)
+        best = {"cost": np.inf, "p0": p0}
+        def objective(params):
+            a, b = params
+            a = float(np.clip(a, *scale_bounds))
+            b = float(np.clip(b, *shift_bounds))
+            cost, fit = self._gauss_peaks_cost_at_alignment(
+                a, b, n_peaks, wl, best["p0"], fit_baseline,
+            )
+            if cost < best["cost"]:
+                best.update(
+                    cost=cost, fit=fit, scale=a, shift=b,
+                    p0={"centers": fit["centers"], "sigmas": fit["sigmas"]},
+                )
+            return cost
+        res = minimize(
+            objective,
+            # options={'maxiter': 5},
+            x0=[scale0, shift0],
+            bounds=[scale_bounds, shift_bounds],
+            method=method,
+            **minimize_kwargs,
+        )
+        self._alignment["scale"] = best["scale"]
+        self._alignment["shift"] = best["shift"]
+        self._alignment["refinement"] = {
+            "method": "gauss_peak_joint_refinement",
+            "scale": best["scale"],
+            "shift": best["shift"],
+            "cost": best["cost"],
+            "success": res.success,
+        }
+        return best["fit"], self._alignment
+
+

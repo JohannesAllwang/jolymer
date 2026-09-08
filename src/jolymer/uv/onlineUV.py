@@ -144,14 +144,12 @@ class onlineUV(Measurement):
     def get_data(self):
         """Convert .spc → .dat, then read the data."""
         import jolymer.uv.spc as spc
-
         spc_file = spc.File(self.get_spec_filename())
         spc_file.write_file(self.get_filename())
         return self.load_data()
 
     def load_data(self):
         """Load the whitespace-delimited .dat file as a DataFrame."""
-
         # Read one line to count columns correctly
         with open(self.get_filename(), "r") as f:
             first_line = f.readline()
@@ -164,6 +162,57 @@ class onlineUV(Measurement):
             engine="python",
         )
         return df
+
+    def get_Abs_wl(self, wl):
+        """
+        Return absorbance vs time for the wavelength(s) closest to the
+        requested wavelength(s).
+        Parameters
+        ----------
+        wl : int, float, or list[int/float]
+            Requested wavelength or wavelengths in nm.
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing:
+                time
+                datetime
+                Abs{wl}
+            where {wl} is the actual measured wavelength closest to the
+            requested wavelength.
+        Examples
+        --------
+        get_Abs_wl(280)
+        get_Abs_wl([260, 280, 295])
+        """
+        if not isinstance(wl, (list, tuple, np.ndarray)):
+            wl = [wl]
+        df = self.load_data().T
+        uv_channels = {}
+        for i in range(20, df.shape[1]):
+            measured_wl = int(df.iat[0, i])
+            Abs = df.iloc[1:, i].astype(float).values
+            ddf = pd.DataFrame({
+                "time": self.get_time(),
+                "datetime": self.get_datetime(),
+                "Abs": Abs,
+            })
+            ddf = ddf[
+                (ddf.time < self.maxtime) &
+                (ddf.time > self.mintime)
+            ].reset_index(drop=True)
+            uv_channels[measured_wl] = ddf
+        available_wl = np.array(sorted(uv_channels.keys()))
+        result = pd.DataFrame({
+            "time": next(iter(uv_channels.values())).time,
+            "datetime": next(iter(uv_channels.values())).datetime,
+        })
+        for requested_wl in wl:
+            closest_wl = available_wl[
+                np.argmin(np.abs(available_wl - requested_wl))
+            ]
+            result[f"Abs{closest_wl}"] = uv_channels[closest_wl]["Abs"].values
+        return result
 
     def get_scaled_Abs(
         self,
@@ -312,6 +361,53 @@ class onlineUV(Measurement):
         ax.set_ylabel("Abs")
         ax.legend(fontsize='xx-small')
         return ax
+
+    def get_wavelength_map(self, wl_min=210, wl_max=900):
+        df = self.load_data().T
+        time = self.get_time()
+        data = {"time": time}
+        for i in range(1, df.shape[1]):
+            wl = float(df.iat[0, i])
+            if wl_min <= wl <= wl_max:
+                data[f"A{wl:.0f}"] = df.iloc[1:, i].astype(float).values
+        return pd.DataFrame(data)
+
+    def plot_spectral_ratio(self, time_min=None, time_max=None, ax=None,
+                            cmap="viridis"):
+        df = self.get_wavelength_map()
+        if time_min is not None:
+            df = df[df["time"] >= time_min]
+        if time_max is not None:
+            df = df[df["time"] <= time_max]
+        wavelengths = np.array([
+            float(col[1:]) for col in df.columns if col.startswith("A")
+        ])
+        wavelengths = np.sort(wavelengths)
+        ratio = df[[f"A{wl:.0f}" for wl in wavelengths]].div(
+            df["A280"], axis=0
+        )
+        if ax is None:
+            fig, ax = plt.subplots()
+        else:
+            fig = ax.get_figure()
+        norm = plt.Normalize(df["time"].min(), df["time"].max())
+        cmap_obj = matplotlib.colormaps[cmap]
+        for (_, row), (_, spectrum) in zip(
+            df.iterrows(),
+            ratio.iterrows()
+        ):
+            ax.plot(
+                wavelengths,
+                spectrum.values,
+                color=cmap_obj(norm(row["time"]))
+            )
+        sm = cm.ScalarMappable(norm=norm, cmap=cmap_obj)
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax)
+        cbar.set_label("Time [s]")
+        ax.set_xlabel("Wavelength [nm]")
+        ax.set_ylabel(r"$A(\lambda) / A_{280}$")
+        return fig, ax
 
     def plot_full_wavelength_map(self,
                               wl_min=210,

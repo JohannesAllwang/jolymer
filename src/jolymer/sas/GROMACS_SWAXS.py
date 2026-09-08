@@ -628,7 +628,7 @@ class GROMACS_SWAXS(SAXS_Measurement):
         ax.invert_yaxis()
         ax.set_xlabel("Time [ns]")
         ax.set_ylabel("$q$ [Å$^{-1}$]")
-        ax.set_zlabel("$E_{saxs}$ [kJ/mol]")
+        ax.set_zlabel("$E_{SWAXS}$ [kJ/mol]")
         return ax
 
     def get_average_spectra(self, filename=None, path=None,

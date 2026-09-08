@@ -158,12 +158,10 @@ class SecMainWindow(QMainWindow):
         self.state = state
         self.setWindowTitle("SEC-SAXS / UV overview")
         self.resize(1400, 900)
-
         central = QWidget()
         self.setCentralWidget(central)
         root_layout = QHBoxLayout(central)
         root_layout.setContentsMargins(0, 0, 0, 0)
-
         # ---------------------------------------------------------
         # LEFT: collapsible parameter panels (UV, SAXS, plot options),
         # wrapped in a scroll area so it never forces the window taller.
@@ -176,13 +174,11 @@ class SecMainWindow(QMainWindow):
         left_layout.addWidget(self._build_alignment_group())
         left_layout.addWidget(self._build_plot_group())
         left_layout.addStretch()
-
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setWidget(left_content)
         left_scroll.setMaximumWidth(360)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
         # ---------------------------------------------------------
         # RIGHT: plot on top, console below (resizable split), console kept
         # ---------------------------------------------------------
@@ -192,7 +188,6 @@ class SecMainWindow(QMainWindow):
         self.toolbar = NavigationToolbar2QT(self.canvas, self)
         right_splitter.addWidget(self.toolbar)
         right_splitter.addWidget(self.canvas)
-
         self.console = Console(namespace={
             "state": self.state,
             "cm": self.state.CM,
@@ -200,18 +195,14 @@ class SecMainWindow(QMainWindow):
         right_splitter.addWidget(self.console)
         right_splitter.setStretchFactor(0, 3)
         right_splitter.setStretchFactor(1, 1)
-
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_splitter.addWidget(left_scroll)
         main_splitter.addWidget(right_splitter)
         main_splitter.setStretchFactor(0, 0)
         main_splitter.setStretchFactor(1, 1)
         root_layout.addWidget(main_splitter)
-
         self._hydrate_from_state()
-
         self._setup_menus()
-
 
     # -------------------------
     # Helpers
@@ -561,11 +552,7 @@ class SecMainWindow(QMainWindow):
                 raise ValueError("Load SAXS data first")
             self.state.align_from_Para()
             if self.refine_para.isChecked():
-                self.state.CM.refine_uv_alignment(
-                    shift_bounds=(-100, 100)
-                )
-                for m in self.state.CM.saxs_list:
-                    m.time = m.time - self.state.CM._alignment['shift']
+                self.state.refine_alignment()
         except Exception as e:
             self._log_exception(f"Error aligning UV/SAXS:", e)
 
