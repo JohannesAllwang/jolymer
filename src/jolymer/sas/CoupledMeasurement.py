@@ -1458,4 +1458,9 @@ class CoupledMeasurement:
         }
         return best["fit"], self._alignment
 
+    def run_joint_dream(self, *args, **kwargs):
+        from jolymer.sas.joint_align_gauss_dream import run_joint_dream
+        return run_joint_dream(self, *args, **kwargs)
+
+#
 

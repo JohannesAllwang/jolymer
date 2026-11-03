@@ -70,6 +70,8 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
     name: str = ""
     subfolders: bool=True
 
+    average_df: pd.DataFrame=None
+
     def __post_init__(self):
         print('replica from:')
         self.NAME = f'R_{self.gss[0].NAME}'
@@ -249,6 +251,19 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         self.gss[0].plot_data(color='black', marker='', ax=ax, unit='A')
         return rgdf
 
+    def get_average( self,
+                    qmax_rg=0.08):
+        if self.average_df is None:
+            rgdf = self.get_rg_dataframe(qmax=qmax_rg)
+            dfs = []
+            for _, row in rgdf.sort_values("Rg").iterrows():
+                dfs.append(row.df)
+            average_df = dfs[0].copy()
+            n = min(len(df) for df in dfs)
+            average_df['I'] = np.vstack([df.I.iloc[:n] for df in dfs]).mean(axis=0)
+            self.average_df = average_df
+        return self.average_df
+
     def plot_average( self,
                     qmax_rg=0.08,
                      ax=None, fit_color=jocolors.tstum7):
@@ -259,16 +274,16 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
         self.gss[0].plot_data(color=jocolors.tstum1, marker='o',
                               linestyle='',
                               ax=ax, unit='A')
-        rgdf = self.get_rg_dataframe(qmax=qmax_rg)
-        dfs = []
-        for _, row in rgdf.sort_values("Rg").iterrows():
-            dfs.append(row.df)
-        average_df = dfs[0].copy()
-        n = min(len(df) for df in dfs)
-        average_df['I'] = np.vstack([df.I.iloc[:n] for df in dfs]).mean(axis=0)
+        average_df = self.get_average(qmax_rg=qmax_rg)
         ax.errorbar(average_df.q, average_df.I, marker='', linestyle='-', color=jocolors.tstum7)
         return ax
 
+    def save_average( self, qmax_rg=0.08):
+        average_df = self.get_average(qmax_rg=qmax_rg)
+        path = Path(self.get_bins_outdir()) / "average.dat"
+        osu.create_path(path.parent)
+        average_df.to_csv(path, sep='\t', index=False)
+        return average_df
 
     def plot_rg_histogram(
             self,
