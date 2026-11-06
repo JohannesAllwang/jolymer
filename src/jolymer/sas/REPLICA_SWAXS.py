@@ -606,7 +606,8 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                 ax.errorbar(df.q, df.I, label=label, marker='')
 
     def plot_bins(self, parameters, H, edges, axes=None,
-                  Nmin=100, label_dict={}):
+                  Nmin=100, label_dict={}, xlim_dict={}, ylim_dict={}, xsize=3,
+                  ysize=2.5):
         from itertools import combinations
         import copy
         pairs = list(combinations(range(len(parameters)), 2))
@@ -620,7 +621,7 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                 nrows=ncols,
                 ncols=nrows,
                 squeeze=False,
-                figsize=(3*nrows, 2.5*ncols))
+                figsize=(xsize*nrows, ysize*ncols))
             axes = axes.flatten()
         else:
             fig = axes[0].get_figure()
@@ -821,3 +822,121 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
             w_opt, n_eff, chi2, res = self.maxent_reweight(i_exp, curves, theta=0.1)
             print("converged:", res.success, "chi2:", chi2, "n_eff:", n_eff)
 
+    def save_time_time_rmsd(
+        self,
+        selection="nucleic",
+        timestep=1,
+        tmp_coords="pca_output/coords.dat",
+        n_jobs=-1,
+        block_size=16,
+    ):
+        """
+        Compute a pairwise no-fit RMSD matrix for a pre-aligned trajectory.
+        Uses MDAnalysis QCP for RMSD calculation and joblib for
+        parallelization. Coordinates and RMSD matrix are memory-mapped.
+        The medoid is saved as a PDB structure.
+        """
+        from joblib import Parallel, delayed
+        from MDAnalysis.analysis.rms import rmsd
+
+        out_file = Path(self.get_bins_outdir(), "time_time_rmsd.dat")
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        out_file = Path(out_file)
+        tmp_coords = Path(tmp_coords)
+        for gs in self.gss:
+            u = gs.get_u()
+            atoms = u.select_atoms(selection)
+            n_atoms = atoms.n_atoms
+            ndim = n_atoms * 3
+            # --------------------------------------------------
+            # PASS 1: Extract coordinates
+            # --------------------------------------------------
+            print("[1/3] Sampling trajectory...")
+            frame_indices = np.arange(
+                0, len(u.trajectory), timestep, dtype=np.int64
+            )
+            n_frames = len(frame_indices)
+            if n_frames == 0:
+                raise ValueError("No trajectory frames selected.")
+            coords_mm = np.memmap(
+                tmp_coords,
+                dtype=np.float32,
+                mode="w+",
+                shape=(n_frames, n_atoms, 3),
+            )
+            for idx, frame in enumerate(frame_indices):
+                u.trajectory[frame]
+                coords_mm[idx] = atoms.positions
+            coords_mm.flush()
+            del coords_mm
+            np.save(
+                out_file.parent / "frame_indices.npy",
+                frame_indices
+            )
+            print(f"  Extracted {n_frames} frames, {n_atoms} atoms.")
+            # --------------------------------------------------
+            # PASS 2: Calculate pairwise RMSD
+            # --------------------------------------------------
+            print("[2/3] Computing RMSD matrix...")
+            coords = np.memmap(
+                tmp_coords,
+                dtype=np.float32,
+                mode="r",
+                shape=(n_frames, n_atoms, 3),
+            )
+            # Initialize matrix
+            matrix = np.lib.format.open_memmap(
+                out_file,
+                mode="w+",
+                dtype=np.float32,
+                shape=(n_frames, n_frames),
+            )
+            matrix[:] = 0
+            del matrix
+            def calculate_block(start, stop):
+                result = np.load(out_file, mmap_mode="r+")
+                for i in range(start, stop):
+                    for j in range(i + 1, n_frames):
+                        result[i, j] = rmsd(
+                            coords[i],
+                            coords[j],
+                            center=True,
+                            superposition=True,
+                        )
+                del result
+            blocks = [
+                (i, min(i + block_size, n_frames))
+                for i in range(0, n_frames, block_size)
+            ]
+            Parallel(
+                n_jobs=n_jobs,
+                prefer="processes",
+                verbose=10,
+            )(
+                delayed(calculate_block)(start, stop)
+                for start, stop in blocks
+            )
+            # Mirror upper triangle
+            matrix = np.load(out_file, mmap_mode="r+")
+            for i in range(n_frames):
+                matrix[i + 1:, i] = matrix[i, i + 1:]
+            del matrix
+            print("  RMSD matrix completed.")
+            # --------------------------------------------------
+            # PASS 3: Determine medoid and save structure
+            # --------------------------------------------------
+            print("[3/3] Determining medoid...")
+            matrix = np.load(out_file, mmap_mode="r")
+            mean_rmsd = np.asarray(matrix.mean(axis=1))
+            medoid_idx = int(np.argmin(mean_rmsd))
+            medoid_frame = int(frame_indices[medoid_idx])
+            u.trajectory[medoid_frame]
+            atoms.write(str(out_file.parent / "medoid.pdb"))
+            np.save(
+                out_file.parent / "medoid_index.npy",
+                np.array([medoid_idx, medoid_frame])
+            )
+            print(f"  Medoid matrix index: {medoid_idx}")
+            print(f"  Original trajectory frame: {medoid_frame}")
+            print(f"  Mean RMSD: {mean_rmsd[medoid_idx]:.3f} Å")
+            print(f"Done! Results saved in {out_file.parent}")
