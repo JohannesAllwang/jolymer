@@ -706,7 +706,7 @@ class CoupledMeasurement:
         cols = ["wl"] + [f"Abs{i}" for i in range(len(saxs_time))]
         return pd.DataFrame(np.column_stack([wl, uv_on_saxs]), columns=cols)
 
-        def _scan_shift(self, theta, n, blocks, bounds, baseline, num):
+    def _scan_shift(self, theta, n, blocks, bounds, baseline, num):
         t = theta.copy()
         best = (np.inf, theta[2 * n])
         for sh in np.linspace(*bounds, num):
