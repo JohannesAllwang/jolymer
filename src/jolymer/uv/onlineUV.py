@@ -328,39 +328,40 @@ class onlineUV(Measurement):
             self.plot_scaled_Abs(scaled_out, ref)
         return scaled_out
 
-    def plot_scaled_Abs(self, scaled_out, ref):
-        fig, ax = plt.subplots()
-        refwl = scaled_out.attrs["refwl_requested"]
-        refwl_used = scaled_out.attrs["refwl_used"]
-        outwl = scaled_out.attrs["outwl"]
-        scale_factors = scaled_out.attrs["scale_factors"]
-        mean_scale_factor = scaled_out.attrs["mean_scale_factor"]
-        alignment_time = scaled_out.attrs["alignment_time"]
-        ax.plot(
-            scaled_out.time,
-            scaled_out.Abs,
-            label=(
-                f"scaled {outwl} nm "
-                f"(factor={np.mean(scale_factors):.3f})"
-            )
-        )
-        ax.plot(
-            ref.time,
-            ref.Abs,
-            label=f"{refwl_used} nm reference"
-        )
-        idx = np.argmin(
-            np.abs(ref.time.values - alignment_time)
-        )
-        ax.scatter(
-            ref.time.iloc[idx],
-            ref.Abs.iloc[idx],
-            label="alignment point"
-        )
-        ax.set_xlabel("time [s]")
-        ax.set_ylabel("Abs")
-        ax.legend(fontsize='xx-small')
-        return ax
+    def get_scaled_Abs(self, refwl=None, outwl=None, alignment_time=None, show=False, show_wl=None):
+        refwl = self.refwl if refwl is None else refwl
+        outwl = self.outwl if outwl is None else outwl
+        alignment_time = self.alignment_time if alignment_time is None else alignment_time
+        if not isinstance(outwl, (list, tuple, np.ndarray)):
+            outwl = [outwl]
+        df = self.load_data().T
+        col = {int(w): i for i, w in zip(range(20, df.shape[1]), df.iloc[0, 20:])}
+        available_wl = np.array(sorted(col))
+        refwl_used = int(available_wl[np.argmin(np.abs(available_wl - refwl))])
+        time = np.asarray(self.get_time())
+        datetime = np.asarray(self.get_datetime())
+        keep = (time < self.maxtime) & (time > self.mintime)
+        time, datetime = time[keep], datetime[keep]
+        vals = lambda w: df.iloc[1:, col[w]].astype(float).values[keep]
+        ref = vals(refwl_used)
+        ref_abs = np.interp(alignment_time, time, ref)
+        scaled, factors = [], []
+        for wl in outwl:
+            if wl not in col:
+                raise ValueError(f"Wavelength {wl} nm not available. Available range: {available_wl.min()}-{available_wl.max()} nm")
+            y = vals(wl)
+            out_abs = np.interp(alignment_time, time, y)
+            if np.isclose(out_abs, 0):
+                raise ValueError(f"Cannot scale {wl} nm: absorbance is zero at alignment time {alignment_time}")
+            factors.append(ref_abs / out_abs)
+            scaled.append(y * factors[-1])
+        stack = np.vstack(scaled)
+        scaled_out = pd.DataFrame({"time": time, "datetime": datetime, "Abs": stack.mean(axis=0), "err_Abs": stack.std(axis=0)})
+        scaled_out.attrs.update({"refwl_requested": refwl, "refwl_used": refwl_used, "outwl": outwl, "scale_factors": factors,
+                                 "mean_scale_factor": float(np.mean(factors)), "alignment_time": alignment_time})
+        if show:
+            self.plot_scaled_Abs(scaled_out, pd.DataFrame({"time": time, "datetime": datetime, "Abs": ref}))
+        return scaled_out
 
     def get_wavelength_map(self, wl_min=210, wl_max=900):
         df = self.load_data().T
