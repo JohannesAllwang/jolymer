@@ -153,12 +153,11 @@ class SEC_SWAXS:
             m.time = float(time_Para)
         return times_Para
 
-    def refine_alignment(self):
-        self.CM.refine_uv_alignment(
-            shift_bounds=(-100, 100)
-        )
-        for m in self.CM.saxs_list:
-            m.time = m.time - self.CM._alignment['shift']
+    def refine_alignment(self, shift_bounds=(-100, 100)):
+        if self.CM._alignment["scale"] != 1.0 or self.CM._alignment["shift"] != 0.0:
+            self.CM.reload_saxs()
+        self.CM.refine_uv_alignment(shift_bounds=shift_bounds)
+        return self.CM.reload_saxs()
 
     def to_json(self, path: Path):
         outdict = {
