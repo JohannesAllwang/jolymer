@@ -511,38 +511,157 @@ class SAXS_Measurement(Measurement):
 
     def get_rg(self, df=None, qmin=0, qmax=10,
                plot=False, Rg0=1, I00=None, ax=None,
-               bounds=((0,0), (np.inf, np.inf)),
-               plot_kwargs={}):
-        outdict = {}
-        if I00 is None:
-            I00 = df.I.max()
+               bounds=((0, 0), (np.inf, np.inf)),
+               plot_kwargs=None,
+               min_points=10, max_qrg=1.3,
+               max_chi2=2.0, **kwargs):
         if df is None:
             df = self.get_data()
+        # Prepare data
         datadf = df.copy()
-        datadf = datadf[datadf.q > qmin]
-        datadf = datadf[datadf.q < qmax]
-        datadf['lnI'] = np.log(datadf.I)
-        def guinier(q, Rg, I0):
-            I = I0 * np.exp(-(Rg*q)**2/3)
-            return I
-        popt, pcov = optimize.curve_fit(guinier, datadf.q, datadf.I, sigma=datadf.err_I, p0=[Rg0, I00], bounds=bounds)
-        outdict['Rg'] = popt[0]
-        outdict['err_Rg'] = np.sqrt(pcov[0, 0])
-        outdict['I0'] = popt[1]
-        outdict['err_I0'] = np.sqrt(pcov[1, 1])
-        outdict['chi2'] = np.sum(((datadf.I - guinier(datadf.q, *popt)) / datadf.err_I)**2) / len(datadf.q)
-        # except Exception as e:
-        #     outdict['Rg'] = None
-        #     outdict['err_Rg'] = None
-        #     outdict['I0'] = None
-        #     outdict['err_I0'] = None
-        #     outdict['chi2'] = None
-        #     print('get_rg', e)
+        datadf = datadf[
+            (datadf.q > qmin) &
+            (datadf.q < qmax) &
+            (datadf.I > 0) &
+            (datadf.err_I > 0)
+        ]
+        datadf = datadf.replace([np.inf, -np.inf], np.nan)
+        datadf = datadf.dropna(subset=['q', 'I', 'err_I'])
+        datadf = datadf.sort_values('q')
+        q = datadf.q.to_numpy()
+        I = datadf.I.to_numpy()
+        err_I = datadf.err_I.to_numpy()
+        n = len(q)
+        if n < min_points:
+            raise ValueError(f"Not enough points for Guinier fit: {n}")
+        # Linearized Guinier equation:
+        # ln(I) = intercept + slope * q^2
+        x = q**2
+        y = np.log(I)
+        sigma = err_I / I
+        w = 1 / sigma**2
+        # Cumulative sums for fast weighted linear regression
+        def cumsum(a):
+            return np.concatenate(([0.], np.cumsum(a)))
+        sw   = cumsum(w)
+        sx   = cumsum(w * x)
+        sy   = cumsum(w * y)
+        sxx  = cumsum(w * x**2)
+        sxy  = cumsum(w * x * y)
+        syy  = cumsum(w * y**2)
+        best = None
+        best = None
+        n_search = min(n, 50)
+        for i in range(n_search - min_points + 1):
+            j = np.arange(i + min_points, n_search + 1)
+            # Weighted sums for all intervals starting at i
+            W   = sw[j]  - sw[i]
+            X   = sx[j]  - sx[i]
+            Y   = sy[j]  - sy[i]
+            XX  = sxx[j] - sxx[i]
+            XY  = sxy[j] - sxy[i]
+            YY  = syy[j] - syy[i]
+            # Weighted linear regression
+            denom = W * XX - X**2
+            valid = denom > 0
+            if not np.any(valid):
+                continue
+            slope = (W * XY - X * Y) / denom
+            intercept = (Y - slope * X) / W
+            # Guinier parameters
+            valid &= slope < 0
+            Rg = np.full(len(j), np.nan)
+            Rg[valid] = np.sqrt(-3 * slope[valid])
+            I0 = np.exp(intercept)
+            # Weighted residual sum of squares
+            chi2 = (
+                YY
+                + intercept**2 * W
+                + slope**2 * XX
+                + 2 * intercept * slope * X
+                - 2 * intercept * Y
+                - 2 * slope * XY
+            )
+            dof = j - i - 2
+            redchi2 = chi2 / dof
+            # Guinier validity criterion
+            qRg = q[j - 1] * Rg
+            # Parameter bounds
+            valid &= (
+                (Rg >= bounds[0][0]) &
+                (Rg <= bounds[1][0]) &
+                (I0 >= bounds[0][1]) &
+                (I0 <= bounds[1][1])
+            )
+            valid &= qRg <= max_qrg
+            if max_chi2 is not None:
+                valid &= redchi2 <= max_chi2
+            if not np.any(valid):
+                continue
+            # Prefer the longest interval, then lowest reduced chi2
+            candidates = np.where(valid)[0]
+            k = candidates[
+                np.lexsort((redchi2[candidates], -dof[candidates]))[0]
+            ]
+            candidate = (
+                dof[k] + 2,
+                redchi2[k],
+                i,
+                j[k],
+                slope[k],
+                intercept[k]
+            )
+            if (best is None or
+                candidate[0] > best[0] or
+                (candidate[0] == best[0] and
+                 candidate[1] < best[1])):
+                best = candidate
+        if best is None:
+            raise ValueError(
+                "No acceptable Guinier range found. "
+                "Try relaxing max_chi2 or max_qrg, "
+                "or check the input data."
+            )
+        # Extract best fit
+        npoints, redchi2, i, j, slope, intercept = best
+        fitdf = datadf.iloc[i:j]
+        qfit = q[i:j]
+        Ifit = I[i:j]
+        Rg = np.sqrt(-3 * slope)
+        I0 = np.exp(intercept)
+        # Parameter uncertainties from weighted least squares
+        W = sw[j] - sw[i]
+        X = sx[j] - sx[i]
+        XX = sxx[j] - sxx[i]
+        cov = np.linalg.inv(
+            np.array([[W, X], [X, XX]])
+        )
+        err_slope = np.sqrt(cov[1, 1])
+        err_intercept = np.sqrt(cov[0, 0])
+        err_Rg = 3 / (2 * Rg) * err_slope
+        err_I0 = I0 * err_intercept
+        outdict = {
+            'Rg': Rg,
+            'err_Rg': err_Rg,
+            'I0': I0,
+            'err_I0': err_I0,
+            'chi2': redchi2,
+            'qmin_fit': qfit[0],
+            'qmax_fit': qfit[-1],
+            'qRg': qfit[-1] * Rg,
+            'n_points': npoints
+        }
+        # Plot
         if plot:
             if ax is None:
+                if plot_kwargs is None:
+                    plot_kwargs = {}
                 ax = self.plot_data(**plot_kwargs)
-            ax.errorbar(datadf.q, guinier(datadf.q, *popt), marker='', linestyle='-.', label='fit')
+            qplot = np.linspace(qfit[0], qfit[-1], 100)
+            Iplot = I0 * np.exp(-(Rg * qplot)**2 / 3)
+            ax.plot(qplot, Iplot, '-.', label='Guinier fit')
         return outdict
+
 
 def gen_guinier_fitfunc(alpha):
     def inner(q, Rg, A):

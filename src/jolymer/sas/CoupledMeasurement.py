@@ -706,318 +706,107 @@ class CoupledMeasurement:
         cols = ["wl"] + [f"Abs{i}" for i in range(len(saxs_time))]
         return pd.DataFrame(np.column_stack([wl, uv_on_saxs]), columns=cols)
 
-    def fit_gauss_peaks(
-        self,
-        n_peaks,
-        wl=280,
-        p0=None,
-        fit_baseline=False,
-    ):
-        """
-        Simultaneously fit SAXS I0 and UV absorbance traces as a sum
-        of Gaussian elution peaks.
-        All channels share the same peak centers and widths, while
-        each channel has its own peak amplitudes.
-        Parameters
-        ----------
-        n_peaks : int
-            Number of Gaussian peaks.
-        wl : int, float, or list[int, float]
-            UV wavelength(s) to include.
-        p0 : dict, optional
-            Initial parameter guesses.
-            Example:
-                {
-                    "centers": [100, 150, 200],
-                    "sigmas": [10, 10, 10],
-                }
-        fit_baseline : bool
-            Whether to fit a constant baseline independently for each
-            channel.
-        Returns
-        -------
-        dict
-            Fitted parameters and reconstructed curves.
-        """
-        from scipy.optimize import least_squares
-        # ------------------------------------------------------------
-        # Load data
-        # ------------------------------------------------------------
-        dfX = self.get_saxs_scalar(
-            self._alignment["saxs_kind"],
-            qmin=self._alignment["qmin"],
-            qmax=self._alignment["qmax"],
-            qstar=self._alignment["qstar"],
-            load=True,
-        )
-        dfUV = self.uv.get_Abs_wl(wl)
-        tX = dfX["time"].to_numpy()
-        yX = dfX["I0"].to_numpy()
-        # UV is still on its own time axis -> transform to SAXS time
-        # shift = self._alignment["shift"]
-        # scale = self._alignment["scale"]
-        shift = 0
-        scale = 1
-        tUV = scale * dfUV["time"].to_numpy() + shift
-        # print(dfX.time, tUV)
-        # Interpolate UV onto SAXS time points
-        from scipy.interpolate import interp1d
-        uv_cols = [
-            col for col in dfUV.columns
-            if col.startswith("Abs")
-        ]
-        uv_interp = {}
-        for col in uv_cols:
-            f = interp1d(
-                tUV,
-                dfUV[col].to_numpy(),
-                bounds_error=False,
-                fill_value=0.0,
-                kind="cubic",
-            )
-            uv_interp[col] = f(tX)
-        # ------------------------------------------------------------
-        # Channels
-        # ------------------------------------------------------------
-        channels = {
-            "I0": yX,
-            **uv_interp,
-        }
-        names = list(channels.keys())
-        y = np.array([channels[name] for name in names])
-        n_channels = len(names)
-        # ------------------------------------------------------------
-        # Initial guesses
-        # ------------------------------------------------------------
-        if p0 is None:
-            tmin = tX[np.argmax(yX > 0)]
-            tmax = tX[np.where(yX > 0)[0][-1]]
-            centers0 = np.linspace(tmin, tmax, n_peaks)
-            sigmas0 = np.full(n_peaks, (tmax - tmin) / (4 * n_peaks))
-        else:
-            centers0 = np.asarray(p0["centers"], dtype=float)
-            sigmas0 = np.asarray(p0["sigmas"], dtype=float)
-        amplitudes0 = np.zeros((n_channels, n_peaks))
-        for j, yy in enumerate(y):
-            for k, center in enumerate(centers0):
-                idx = np.argmin(np.abs(tX - center))
-                val = yy[idx]
-                amplitudes0[j, k] = val if (np.isfinite(val) and val > 0) else 0.0
-
-        baselines0 = np.array([
-            np.nanpercentile(yy, 5) if np.any(np.isfinite(yy)) else 0.0
-            for yy in y
-        ])
-        p0_vec = np.concatenate([
-            centers0,
-            sigmas0,
-            amplitudes0.ravel(),
-            baselines0 if fit_baseline else [],
-        ])
-        # ------------------------------------------------------------
-        # Model
-        # ------------------------------------------------------------
-        def model(params):
-            i = 0
-            centers = params[i:i+n_peaks]
-            i += n_peaks
-            sigmas = params[i:i+n_peaks]
-            i += n_peaks
-            amplitudes = params[
-                i:i + n_channels * n_peaks
-            ].reshape(n_channels, n_peaks)
-            i += n_channels * n_peaks
-            if fit_baseline:
-                baselines = params[i:i+n_channels]
-            else:
-                baselines = np.zeros(n_channels)
-            result = np.zeros((n_channels, len(tX)))
-            for k in range(n_peaks):
-                gaussian = np.exp(
-                    -(tX - centers[k])**2 /
-                    (2 * sigmas[k]**2)
-                )
-                result += amplitudes[:, k, None] * gaussian
-            result += baselines[:, None]
-            return result
-        # ------------------------------------------------------------
-        # Residual
-        # ------------------------------------------------------------
-        finite_mask = np.isfinite(y)          # shape (n_channels, len(tX))
-        y_filled = np.where(finite_mask, y, 0.0)   # avoid 0*nan inside the objective
-        def residual(params):
-            diff = model(params) - y_filled
-            diff = np.where(finite_mask, diff, 0.0)   # zero out unobserved points
-            return diff.ravel()
-        # ------------------------------------------------------------
-        # Bounds
-        # ------------------------------------------------------------
-        lower = np.concatenate([
-            np.full(n_peaks, tX.min()),
-            np.full(n_peaks, 0.01),
-            np.zeros(n_channels * n_peaks),
-            np.full(n_channels, -np.inf) if fit_baseline else [],
-        ])
-        upper = np.concatenate([
-            np.full(n_peaks, tX.max()),
-            np.full(n_peaks, tX.max() - tX.min()),
-            np.full(n_channels * n_peaks, np.inf),
-            np.full(n_channels, np.inf) if fit_baseline else [],
-        ])
-        # ------------------------------------------------------------
-        # Fit
-        # ------------------------------------------------------------
-        result = least_squares(
-            residual,
-            p0_vec,
-            bounds=(lower, upper),
-        )
-        # ------------------------------------------------------------
-        # Extract parameters
-        # ------------------------------------------------------------
-        params = result.x
-        i = 0
-        centers = params[i:i+n_peaks]
-        i += n_peaks
-        sigmas = params[i:i+n_peaks]
-        i += n_peaks
-        amplitudes = params[
-            i:i + n_channels * n_peaks
-        ].reshape(n_channels, n_peaks)
-        i += n_channels * n_peaks
-        if fit_baseline:
-            baselines = params[i:i+n_channels]
-        else:
-            baselines = np.zeros(n_channels)
-        fitted = model(params)
-        # ------------------------------------------------------------
-        # Return
-        # ------------------------------------------------------------
-        peaks = {}
-        for j, channel in enumerate(names):
-            peaks[channel] = {}
-            for k, (center, sigma) in enumerate(zip(centers, sigmas)):
-                gaussian = amplitudes[j, k] * np.exp(
-                    -(tX - center)**2 / (2 * sigma**2)
-                )
-                peaks[channel][f"peak_{k + 1}"] = gaussian
-        return {
-            "result": result,
-            "centers": centers,
-            "sigmas": sigmas,
-            "amplitudes": pd.DataFrame(
-                amplitudes,
-                index=names,
-                columns=[
-                    f"peak_{i+1}"
-                    for i in range(n_peaks)
-                ],
-            ),
-            "baselines": pd.Series(
-                baselines,
-                index=names,
-            ),
-            "time": tX,
-            "data": pd.DataFrame(
-                y.T,
-                index=tX,
-                columns=names,
-            ),
-            "fit": pd.DataFrame(
-                fitted.T,
-                index=tX,
-                columns=names,
-            ),
-            "peaks": peaks
-        }
-
-    def plot_gauss_peaks(self, fit):
-        import matplotlib.pyplot as plt
-        channels = list(fit["data"].columns)
-        fig, axes = plt.subplots(len(channels), 1, figsize=(7, 3 * len(channels)), sharex=True, squeeze=False)
-        axes = axes[:, 0]
-        time = fit["time"]
-        for i, channel in enumerate(channels):
-            ax = axes[i]
-            ax.plot(time, fit["data"][channel], label=channel)
-            for peak, curve in fit["peaks"][channel].items():
-                ax.plot(time, curve, ":", label=peak)
-            ax.plot(time, fit["fit"][channel], label="fit")
-            ax.set_ylabel(channel)
-            ax.legend()
-        axes[-1].set_xlabel("Time (s)")
-        fig.tight_layout()
-        return fig, axes
-
+        def _scan_shift(self, theta, n, blocks, bounds, baseline, num):
+        t = theta.copy()
+        best = (np.inf, theta[2 * n])
+        for sh in np.linspace(*bounds, num):
+            t[2 * n] = sh
+            cost = np.sum(self._eval_blocks(t, n, blocks[:1], True, baseline)[0][2] ** 2)
+            if cost < best[0]:
+                best = (cost, sh)
+        return best[1]
 
     @staticmethod
-    def refine_uv_scale_shift(
-        dfUV,
-        dfSAXS,
-        uv_col="Abs",
-        saxs_col="I0",
-        min_t_saxs=0,
-        max_t_saxs=np.inf,
-        I0_min=0,
-        scale0=1.0,
-        shift0=0.0,
-        scale_bounds=(0.98, 1.02),
-        shift_bounds=(-10.0, 10.0),
-    ):
+    def _block_report(b, G, A, n, baseline):
+        cols = [f"peak_{k + 1}" for k in range(n)]
+        base = A[n] - A[n + 1] if baseline else np.zeros(A.shape[1])
+        return dict(
+            time=b["t"],
+            data=pd.DataFrame(b["Y"], index=b["t"], columns=b["names"]),
+            fit=pd.DataFrame(G @ A, index=b["t"], columns=b["names"]),
+            amplitudes=pd.DataFrame(A[:n].T, index=b["names"], columns=cols),
+            baselines=pd.Series(base, index=b["names"]),
+            peaks={nm: {cols[k]: G[:, k] * A[k, j] for k in range(n)} for j, nm in enumerate(b["names"])})
+
+    def fit_gauss_peaks(self, n_peaks, wl=280, p0=None, baseline=False, fit_alignment=True,
+                        fit_scale=False, shift_window=100.0, scale_tol=0.05, uv_weight=1.0,
+                        scan_points=401, apply=False, **ls_kwargs):
         """
-        Local refinement of (scale, shift) together. Same correlation
-        objective as align_uv_df_to_saxs_df, but started from
-        (scale0, shift0) and optimized with L-BFGS-B instead of
-        differential_evolution -- appropriate once the alignment is
-        already close and you just want a small, fast, reproducible
-        correction rather than a full global search.
+        Joint fit of SAXS I0 and UV absorbance (one or many wavelengths) as a sum of
+        Gaussians on their native time grids, no interpolation. UV centers/sigmas are
+        shared; the SAXS block sees them as c' = scale*c + shift, s' = scale*s.
+        shift/scale bounds are relative to the current self._alignment.
+        apply=True stores the fitted (scale, shift) in self._alignment; call
+        reload_saxs() afterwards to move SAXS onto the UV time axis.
         """
-        from scipy.optimize import minimize
+        from scipy.optimize import least_squares
+        n = n_peaks
+        a = self._alignment
+        scale0, shift0 = a.get("scale", 1.0), a.get("shift", 0.0)
+        blocks = self._build_blocks(wl, uv_weight)
+        theta0, (lo, hi) = self._theta_start_bounds(
+            blocks, n, True, (scale0 * (1 - scale_tol), scale0 * (1 + scale_tol)),
+            (shift0 - shift_window, shift0 + shift_window))
+        if p0 is not None:
+            theta0[:n] = p0["centers"]
+            theta0[n:2 * n] = np.log(p0["sigmas"])
+        theta0 = np.clip(theta0, lo, hi)
+        free = np.ones(len(theta0), bool)
+        if not fit_alignment:
+            free[2 * n:] = False
+        elif not fit_scale:
+            free[2 * n + 1] = False
+        if fit_alignment:
+            theta0[2 * n] = self._scan_shift(theta0, n, blocks, (lo[2 * n], hi[2 * n]), baseline, scan_points)
+        def fun(x):
+            th = theta0.copy()
+            th[free] = x
+            return self._joint_residual(th, n, blocks, True, baseline)
+        res = least_squares(fun, theta0[free], bounds=(lo[free], hi[free]), x_scale="jac", **ls_kwargs)
+        theta = theta0.copy()
+        theta[free] = res.x
+        c, s, scale, shift = self._unpack_theta(theta, n, True)
+        ev = self._eval_blocks(theta, n, blocks, True, baseline)
+        saxs, uv = (self._block_report(b, G, A, n, baseline) for b, (G, A, _) in zip(blocks, ev))
+        wl_arr = np.atleast_1d(np.asarray(list(wl) if isinstance(wl, range) else wl, float))
+        uv["wl"] = wl_arr if len(wl_arr) == len(uv["data"].columns) else np.arange(len(uv["data"].columns))
+        if apply and fit_alignment:
+            self._store_alignment(scale, shift, 2 * res.cost, res.success)
+        return dict(result=res, cost=float(2 * res.cost), centers=c, sigmas=s, scale=float(scale),
+                    shift=float(shift), centers_saxs=scale * c + shift, sigmas_saxs=scale * s,
+                    saxs=saxs, uv=uv)
 
-        t_saxs = dfSAXS["time"].to_numpy()
-        y_saxs = dfSAXS[saxs_col].to_numpy()
-        mask = (
-            (t_saxs >= min_t_saxs) &
-            (t_saxs <= max_t_saxs) &
-            (y_saxs >= I0_min)
-        )
-        t_saxs_m = t_saxs[mask]
-        y_saxs_m = y_saxs[mask]
-        t_uv = dfUV["time"].to_numpy()
-        y_uv = dfUV[uv_col].to_numpy()
+    def plot_gauss_peaks(self, fit, max_uv=3, channels=None):
+        import matplotlib.pyplot as plt
+        names = list(fit["uv"]["data"].columns)
+        if channels is None:
+            channels = [names[i] for i in np.unique(np.linspace(0, len(names) - 1, min(max_uv, len(names))).astype(int))]
+        panels = [("I0", fit["saxs"], lambda t: (t - fit["shift"]) / fit["scale"])]
+        panels += [(c, fit["uv"], lambda t: t) for c in channels]
+        fig, axes = plt.subplots(len(panels), 1, figsize=(7, 3 * len(panels)), sharex=True, squeeze=False)
+        for ax, (ch, rep, tf) in zip(axes[:, 0], panels):
+            t = tf(rep["time"])
+            ax.plot(t, rep["data"][ch], label=ch)
+            for k, v in rep["peaks"][ch].items():
+                ax.plot(t, v, ":", label=k)
+            ax.plot(t, rep["fit"][ch], label="fit")
+            ax.set_ylabel(ch)
+            ax.legend()
+        axes[-1, 0].set_xlabel("UV time (s)")
+        fig.tight_layout()
+        return fig, axes[:, 0]
 
-        y_saxs_n = (y_saxs_m - y_saxs_m.mean()) / y_saxs_m.std()
+    def plot_gauss_spectra(self, fit):
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(7, 3))
+        A = fit["uv"]["amplitudes"]
+        for k in A.columns:
+            ax.plot(fit["uv"]["wl"], A[k].to_numpy(), label=k)
+        ax.set_xlabel("Wavelength (nm)")
+        ax.set_ylabel("Peak amplitude")
+        ax.legend()
+        return fig, ax
 
-        def loss(p):
-            a, b = p
-            f = interp1d(
-                a * t_uv + b,
-                y_uv,
-                kind="cubic",
-                bounds_error=False,
-                fill_value=0,
-            )
-            y_uv_i = f(t_saxs_m)
-            if np.std(y_uv_i) == 0:
-                return np.inf
-            y_uv_n = (y_uv_i - y_uv_i.mean()) / y_uv_i.std()
-            return -np.sum(y_saxs_n * y_uv_n)
-
-        res = minimize(
-            loss,
-            x0=[scale0, shift0],
-            bounds=[scale_bounds, shift_bounds],
-            method="L-BFGS-B",
-        )
-        a, b = res.x
-        score = -res.fun
-        return {
-            "method": "scale_shift_refinement",
-            "scale": float(a),
-            "shift": float(b),
-            "score": score,
-            "success": res.success,
-        }
 
     def refine_uv_alignment_scale_shift(
         self,
@@ -1461,6 +1250,95 @@ class CoupledMeasurement:
     def run_joint_dream(self, *args, **kwargs):
         from jolymer.sas.joint_align_gauss_dream import run_joint_dream
         return run_joint_dream(self, *args, **kwargs)
+
+        @staticmethod
+    def _gauss_design(t, centers, sigmas, baseline=False):
+        G = np.exp(-(t[:, None] - centers[None, :])**2 / (2 * sigmas[None, :]**2))
+        return np.column_stack([G, np.ones_like(t), -np.ones_like(t)]) if baseline else G
+
+    @staticmethod
+    def _solve_amplitudes(G, Y):
+        from scipy.optimize import nnls
+        if np.isfinite(Y).all():
+            A = np.linalg.lstsq(G, Y, rcond=None)[0]
+            bad = np.where((A < 0).any(axis=0))[0]
+        else:
+            A = np.zeros((G.shape[1], Y.shape[1]))
+            bad = range(Y.shape[1])
+        for j in bad:
+            m = np.isfinite(Y[:, j])
+            A[:, j] = nnls(G[m], Y[m, j])[0]
+        return A
+
+    @staticmethod
+    def _unpack_theta(theta, n, fit_scale):
+        scale = theta[2 * n + 1] if fit_scale else 1.0
+        return theta[:n], np.exp(theta[n:2 * n]), scale, theta[2 * n]
+
+    @staticmethod
+    def _guess_peaks(t, y, n):
+        from scipy.signal import find_peaks, peak_widths
+        y = np.nan_to_num(np.asarray(y, float))
+        dt = np.median(np.diff(t))
+        idx, prop = find_peaks(y, prominence=0.02 * np.ptp(y))
+        idx = idx[np.argsort(prop["prominences"])[::-1][:n]]
+        sig = peak_widths(y, idx, rel_height=0.5)[0] * dt / 2.355 if len(idx) else []
+        c = list(t[idx])
+        s = list(np.maximum(sig, dt))
+        k = n - len(c)
+        if k > 0:
+            c += list(np.linspace(t[0], t[-1], k + 2)[1:-1])
+            s += [(t[-1] - t[0]) / (4 * n)] * k
+        o = np.argsort(c)
+        return np.array(c)[o], np.array(s)[o]
+
+    def _build_blocks(self, wl=280, uv_weight=1.0):
+        a = self._alignment
+        dfX = self.get_saxs_scalar(a["saxs_kind"], qmin=a["qmin"], qmax=a["qmax"], qstar=a["qstar"], load=True)
+        dfUV = self.uv.get_Abs_wl(list(wl) if isinstance(wl, range) else wl)
+        cols = [c for c in dfUV.columns if c.startswith("Abs")]
+        tX = dfX["time"].to_numpy(float)
+        yX = dfX["I0"].to_numpy(float)[:, None]
+        tU = dfUV["time"].to_numpy(float)
+        YU = dfUV[cols].to_numpy(float)
+        sx = np.nanmax(np.abs(yX))
+        su = np.nanmax(np.abs(YU)) * np.sqrt(len(cols)) / uv_weight
+        return [dict(t=tX, Y=yX, cw=np.array([1 / sx]), affine=True, names=["I0"]),
+                dict(t=tU, Y=YU, cw=np.full(len(cols), 1 / su), affine=False, names=cols)]
+
+    def _eval_blocks(self, theta, n, blocks, fit_scale=True, baseline=False):
+        c, s, scale, shift = self._unpack_theta(theta, n, fit_scale)
+        out = []
+        for b in blocks:
+            cc, ss = (scale * c + shift, scale * s) if b["affine"] else (c, s)
+            G = self._gauss_design(b["t"], cc, ss, baseline)
+            A = self._solve_amplitudes(G, b["Y"])
+            d = G @ A - b["Y"]
+            out.append((G, A, np.where(np.isfinite(d), d, 0.0) * b["cw"]))
+        return out
+
+    def _joint_residual(self, theta, n, blocks, fit_scale=True, baseline=False):
+        return np.concatenate([r.ravel() for _, _, r in self._eval_blocks(theta, n, blocks, fit_scale, baseline)])
+
+    def _theta_start_bounds(self, blocks, n, fit_scale=True, scale_bounds=(0.95, 1.05), shift_bounds=(-100.0, 100.0)):
+        tU = blocks[1]["t"]
+        c0, s0 = self._guess_peaks(tU, np.nansum(blocks[1]["Y"], axis=1), n)
+        dt = np.median(np.diff(tU))
+        rng = tU.max() - tU.min()
+        x0 = [*c0, *np.log(s0), self._alignment.get("shift", 0.0)]
+        lo = [*np.full(n, tU.min()), *np.full(n, np.log(dt / 2)), shift_bounds[0]]
+        hi = [*np.full(n, tU.max()), *np.full(n, np.log(rng)), shift_bounds[1]]
+        if fit_scale:
+            x0.append(self._alignment.get("scale", 1.0))
+            lo.append(scale_bounds[0])
+            hi.append(scale_bounds[1])
+        return np.array(x0, float), (np.array(lo), np.array(hi))
+
+    def _store_alignment(self, scale, shift, cost, success):
+        self._alignment["scale"] = float(scale)
+        self._alignment["shift"] = float(shift)
+        self._alignment["refinement"] = {"method": "gauss_peak_joint", "scale": float(scale), "shift": float(shift), "cost": float(cost), "success": bool(success)}
+        return self._alignment
 
 #
 

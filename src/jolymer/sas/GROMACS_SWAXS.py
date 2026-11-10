@@ -641,14 +641,9 @@ class GROMACS_SWAXS(SAXS_Measurement):
             path = self.mdpath
         if filename is None:
             filename = self.spectra_filename
-        outdict = {'time': [],
-                   'df': [],
-                   'chi2': [],
-                   'Rg': [],
-                   'err_Rg': [],
-                   'Rchi2': [],
-                   'I0': [],
-                   'err_I0': []}
+        outdict = { 'time': [], 'df': [], 'chi2': [], 'Rg': [], 'err_Rg': [],
+                    'Rchi2': [], 'I0': [], 'err_I0': [], 'qmin_fit': [], 'qmax_fit': [],
+                   'qRg': [], 'n_points': [] }
         file = Path(path, filename)
         if filename is None:
             file = self.get_spectra_filename()
@@ -708,12 +703,9 @@ class GROMACS_SWAXS(SAXS_Measurement):
                                              qmin=0.1, qmax=1)
             Rg = Rgdict['Rg']
             # print('rgdict', Rgdict)
-            for key in Rgdict.keys():
-                # print(Rgdict[key])
-                if key == 'chi2':
-                    outdict['Rchi2'].append(Rgdict[key])
-                else:
-                    outdict[key].append(Rgdict[key])
+            for key, value in Rgdict.items():
+                outkey = 'Rchi2' if key == 'chi2' else key
+                outdict.setdefault(outkey, []).append(value)
         outdict['df'].append(df)
         outdict['chi2'].append(chi2)
         return outdict
@@ -728,8 +720,9 @@ class GROMACS_SWAXS(SAXS_Measurement):
         path = self.mdpath if path is None else path
         filename = self.spectra_filename if filename is None else filename
         file = Path(path, filename) if filename is not None else self.get_spectra_filename()
-        outdict = {'time': [], 'df': [], 'chi2': [], 'Rg': [],
-                   'err_Rg': [], 'Rchi2': [], 'I0': [], 'err_I0': []}
+        outdict = { 'time': [], 'df': [], 'chi2': [], 'Rg': [], 'err_Rg': [],
+                    'Rchi2': [], 'I0': [], 'err_I0': [], 'qmin_fit': [], 'qmax_fit': [],
+                   'qRg': [], 'n_points': [] }
         df_data = self.get_data(angular_unit=angular_unit, scale=self.shift)
         ax = kwargs.pop('ax') if 'ax' in kwargs else None
         ax_res = kwargs.pop('ax_res') if 'ax_res' in kwargs else None
