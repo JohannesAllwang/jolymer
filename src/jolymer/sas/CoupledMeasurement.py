@@ -1251,7 +1251,7 @@ class CoupledMeasurement:
         from jolymer.sas.joint_align_gauss_dream import run_joint_dream
         return run_joint_dream(self, *args, **kwargs)
 
-        @staticmethod
+    @staticmethod
     def _gauss_design(t, centers, sigmas, baseline=False):
         G = np.exp(-(t[:, None] - centers[None, :])**2 / (2 * sigmas[None, :]**2))
         return np.column_stack([G, np.ones_like(t), -np.ones_like(t)]) if baseline else G
