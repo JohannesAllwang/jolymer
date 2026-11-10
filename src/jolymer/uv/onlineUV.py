@@ -359,8 +359,8 @@ class onlineUV(Measurement):
         scaled_out = pd.DataFrame({"time": time, "datetime": datetime, "Abs": stack.mean(axis=0), "err_Abs": stack.std(axis=0)})
         scaled_out.attrs.update({"refwl_requested": refwl, "refwl_used": refwl_used, "outwl": outwl, "scale_factors": factors,
                                  "mean_scale_factor": float(np.mean(factors)), "alignment_time": alignment_time})
-        if show:
-            self.plot_scaled_Abs(scaled_out, pd.DataFrame({"time": time, "datetime": datetime, "Abs": ref}))
+        # if show:
+        #     self.plot_scaled_Abs(scaled_out, pd.DataFrame({"time": time, "datetime": datetime, "Abs": ref}))
         return scaled_out
 
     def get_wavelength_map(self, wl_min=210, wl_max=900):
