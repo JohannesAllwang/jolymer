@@ -520,7 +520,7 @@ class CoupledMeasurement:
         min_t_saxs=0,
         max_t_saxs=np.inf,
         I0_min=0,
-        scale0shift0=[2.2, -1400],
+        scale0shift0=[1.0, 0],
     ):
         dfUV = self.get_dfUV()
         self.uv.df = dfUV
