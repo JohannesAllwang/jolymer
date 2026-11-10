@@ -510,36 +510,62 @@ class CoupledMeasurement:
                                       alignment_time=self.uv.alignment_time)
         return dfUV
 
-    def align_uv_to_saxs(
-        self,
-        saxs_kind="I0",
-        qstar=0.1,
-        qmin=0.04, qmax=0.4,
-        allow_fallback=True,
-        load=True,
-        min_t_saxs=0,
-        max_t_saxs=np.inf,
-        I0_min=0,
-        scale0shift0=[1.0, 0],
-    ):
+    def reset_times(self):
+        if not hasattr(self, "_t_raw"):
+            self._t_raw = [m.time for m in self.saxs_list]
+        for m, t in zip(self.saxs_list, self._t_raw):
+            m.time = t
+        self._uv_on_saxs = None
+        self._autorg_df = None
+        self._alignment.update(scale=1.0, shift=0.0)
+        return self._alignment
+
+    @staticmethod
+    def align_uv_df_to_saxs_df(dfUV, dfSAXS, uv_col="Abs", saxs_col="I0", min_t_saxs=0, max_t_saxs=np.inf,
+                               I0_min=0, scale0shift0=(2.2, -1400.0), scale_rel=0.2, shift_window=600.0,
+                               n_scale=81, n_shift=241, **_):
+        """Model: t_saxs = scale * t_uv + shift. Deterministic grid search around scale0shift0, then Nelder-Mead polish."""
+        from scipy.optimize import minimize
+        ts = dfSAXS["time"].to_numpy(float)
+        ys = dfSAXS[saxs_col].to_numpy(float)
+        m = np.isfinite(ys) & (ts >= min_t_saxs) & (ts <= max_t_saxs) & (ys >= I0_min)
+        ts, ys = ts[m], ys[m]
+        ys = (ys - ys.mean()) / ys.std()
+        tu = dfUV["time"].to_numpy(float)
+        yu = dfUV[uv_col].to_numpy(float)
+        o = np.argsort(tu)
+        tu, yu = tu[o], yu[o]
+        def score(p):
+            if p[0] <= 0:
+                return -2.0
+            yi = np.interp(ts, p[0] * tu + p[1], yu, left=np.nan, right=np.nan)
+            ok = np.isfinite(yi)
+            if ok.sum() < 10 or np.std(yi[ok]) == 0:
+                return -2.0
+            return np.corrcoef(ys[ok], yi[ok])[0, 1]
+        a0, b0 = scale0shift0
+        best = (-np.inf, a0, b0)
+        for a in np.linspace(a0 * (1 - scale_rel), a0 * (1 + scale_rel), n_scale):
+            for b in np.linspace(b0 - shift_window, b0 + shift_window, n_shift):
+                s = score((a, b))
+                if s > best[0]:
+                    best = (s, a, b)
+        _, a, b = best
+        res = minimize(lambda p: -score(p), [a, b], method="Nelder-Mead",
+                       options=dict(initial_simplex=[[a, b], [a * 1.002, b], [a, b + 2.0]], xatol=1e-6, fatol=1e-9))
+        a, b = res.x
+        return {"method": "affine", "scale": float(a), "shift": float(b), "score": float(-res.fun), "success": bool(res.success)}
+
+    def align_uv_to_saxs(self, saxs_kind="autorg", qstar=0.1, qmin=0.04, qmax=0.4, load=True,
+                         min_t_saxs=0, max_t_saxs=np.inf, I0_min=0, scale0shift0=(2.2, -1400.0), **kwargs):
+        self.reset_times()
         dfUV = self.get_dfUV()
         self.uv.df = dfUV
-        dfSAXS = self.get_saxs_scalar(kind=saxs_kind, qstar=qstar, qmin=qmin, qmax=qmax,
-                                      load=load)
-        alignment = self.align_uv_df_to_saxs_df(
-            dfUV,
-            dfSAXS,
-            min_t_saxs=min_t_saxs,
-            max_t_saxs=max_t_saxs,
-            I0_min=I0_min,
-            preprocess_uv_mode="identity",
-            scale0shift0=scale0shift0,
-        )
+        dfSAXS = self.get_saxs_scalar(kind=saxs_kind, qstar=qstar, qmin=qmin, qmax=qmax, load=load)
+        alignment = self.align_uv_df_to_saxs_df(dfUV, dfSAXS, min_t_saxs=min_t_saxs, max_t_saxs=max_t_saxs,
+                                                I0_min=I0_min, scale0shift0=scale0shift0, **kwargs)
+        alignment.update(saxs_kind=saxs_kind, qstar=qstar, qmin=qmin, qmax=qmax)
         self._alignment = alignment
-        self._alignment["saxs_kind"] = saxs_kind
-        self._alignment["qstar"] = qstar
-        self._alignment["qmin"] = qmin
-        self._alignment["qmax"] = qmax
         return self._alignment
 
     def get_saxs_path(self):
@@ -949,89 +975,6 @@ class CoupledMeasurement:
             ax.set_xlabel("Time (min)")
         return ax, autorg_df
 
-
-    @staticmethod
-    def align_uv_df_to_saxs_df(
-        dfUV,
-        dfSAXS,
-        uv_col="Abs",
-        saxs_col="I0",
-        min_t_saxs=0,
-        max_t_saxs=np.inf,
-        I0_min=0,
-        preprocess_uv_mode="identity",
-        preprocess_uv_kwargs=None,
-        scale_bounds=(0.95, 1.05),
-        shift_bounds=(-3000.0, 3000.0),
-        scale0shift0=[2.2, -1400],
-    ):
-        """
-        Affine-align UV dataframe to SAXS dataframe in time.
-        Returns:
-            alignment dict with scale, shift, and score
-        """
-        from scipy.optimize import minimize
-        from scipy.optimize import differential_evolution
-        if preprocess_uv_kwargs is None:
-            preprocess_uv_kwargs = {}
-        # --- preprocess UV (hook for later deconvolution etc.)
-        dfUVp = CoupledMeasurement.preprocess_uv(dfUV, mode=preprocess_uv_mode,
-                               **preprocess_uv_kwargs)
-        # --- extract arrays (but keep DF as source of truth)
-        t_saxs = dfSAXS["time"].to_numpy()
-        y_saxs = dfSAXS[saxs_col].to_numpy()
-        mask = (
-            (t_saxs >= min_t_saxs) &
-            (t_saxs <= max_t_saxs) &
-            (y_saxs >= I0_min)
-        )
-        t_saxs_m    = t_saxs[mask]
-        y_saxs_m   = y_saxs[mask]
-        # w = y_saxs  / (np.abs(dfSAXS[f'err{saxs_col}'].to_numpy()**2))
-        # w = w  / np.sum(w)
-        t_uv = dfUVp["time"].to_numpy()
-        y_uv = dfUVp[uv_col].to_numpy()
-        # normalize SAXS once
-        y_saxs_n = (y_saxs_m - y_saxs_m.mean()) / y_saxs_m.std()
-        def loss(p):
-            a, b = p
-            t_uv_warped = a * t_uv + b
-            f = interp1d(
-                t_uv_warped,
-                y_uv,
-                kind="cubic",
-                # bounds_error=True,
-                bounds_error=False,
-                fill_value=0,
-            )
-            y_uv_i = f(t_saxs_m)
-            # normalize UV after interpolation
-            if np.std(y_uv_i) == 0:
-                return np.inf
-            y_uv_n = (y_uv_i - y_uv_i.mean()) / y_uv_i.std()
-            # negative correlation (we minimize)
-            return -np.sum(y_saxs_n * y_uv_n)
-        # initial guess: no scaling, no shift
-        # res = minimize(
-        #     loss,
-        #     x0=scale0shift0,
-        #     bounds=[scale_bounds, shift_bounds],
-        #     method="L-BFGS-B",
-        # )
-        res = differential_evolution(loss,
-            x0=scale0shift0,
-            bounds=[scale_bounds, shift_bounds])
-        print("t_saxs:", t_saxs[:5], "...", t_saxs[-5:])
-        print("t_uv:", t_uv[:5], "...", t_uv[-5:])
-        a, b = res.x
-        score = -res.fun
-        return {
-            "method": "affine",
-            "scale": a,
-            "shift": b,
-            "score": score,
-            "success": res.success,
-        }
 
     @staticmethod
     def refine_uv_shift(
