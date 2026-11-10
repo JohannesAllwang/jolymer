@@ -827,7 +827,9 @@ class CoupledMeasurement:
         fig, ax = plt.subplots(figsize=(7, 3))
         A = fit["uv"]["amplitudes"]
         for k in A.columns:
-            ax.plot(fit["uv"]["wl"], A[k].to_numpy(), label=k)
+            yval = A[k].to_numpy()
+            yval = yval/yval.max()
+            ax.plot(fit["uv"]["wl"], yval, label=k)
         ax.set_xlabel("Wavelength (nm)")
         ax.set_ylabel("Peak amplitude")
         ax.legend()
