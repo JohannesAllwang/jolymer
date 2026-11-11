@@ -139,9 +139,9 @@ class SEC_SWAXS:
         print('uv_datetime', uv_datetime)
         uv_time0 = pd.Timestamp(uv_datetime[0]).to_pydatetime()
         datetime_df = mDI.get_data_collection_dates(time0=uv_time0)
-        for m, time_h5 in zip(self.CM.saxs_list,
-                              datetime_df['time'].values):
-            m.time = float(time_h5)
+        time_h5s = datetime_df['time'].values
+        for m in self.CM.saxs_list:
+            m.time = time_h5s[m.seqi]
         return datetime_df
 
     def align_from_Para(self):
@@ -150,7 +150,7 @@ class SEC_SWAXS:
         times_Para = mDI.get_Para_times()
         for m, time_Para in zip(self.CM.saxs_list,
                                 times_Para):
-            m.time = float(time_Para)
+            m.time = times_Para[m.seqi]
         return times_Para
 
     def refine_alignment(self, shift_bounds=(-100, 100)):
