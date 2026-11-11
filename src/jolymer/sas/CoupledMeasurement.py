@@ -811,11 +811,15 @@ class CoupledMeasurement:
         panels += [(c, fit["uv"], lambda t: t) for c in channels]
         fig, axes = plt.subplots(len(panels), 1, figsize=(7, 3 * len(panels)), sharex=True, squeeze=False)
         for ax, (ch, rep, tf) in zip(axes[:, 0], panels):
-            t = tf(rep["time"])
+            t = np.asarray(tf(rep["time"]))
             ax.plot(t, rep["data"][ch], label=ch)
-            for k, v in rep["peaks"][ch].items():
-                ax.plot(t, v, ":", label=k)
             ax.plot(t, rep["fit"][ch], label="fit")
+            for i, (k, v) in enumerate(rep["peaks"][ch].items(), start=1):
+                v = np.asarray(v)
+                ax.plot(t, v, ":")
+                j = int(np.argmax(v))
+                ax.annotate(f"P{i}", xy=(t[j], v[j]),
+                            fontsize='xx-small')
             ax.set_ylabel(ch)
             ax.legend()
         axes[-1, 0].set_xlabel("UV time (s)")
