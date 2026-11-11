@@ -756,7 +756,7 @@ class CoupledMeasurement:
 
     def fit_gauss_peaks(self, n_peaks, wl=280, p0=None, baseline=False, fit_alignment=True,
                         fit_scale=False, shift_window=100.0, scale_tol=0.05, uv_weight=1.0,
-                        scan_points=401, apply=False, **ls_kwargs):
+                        scan_points=401, apply=False, sigma_bounds=None, **ls_kwargs):
         """
         Joint fit of SAXS I0 and UV absorbance (one or many wavelengths) as a sum of
         Gaussians on their native time grids, no interpolation. UV centers/sigmas are
@@ -772,7 +772,7 @@ class CoupledMeasurement:
         blocks = self._build_blocks(wl, uv_weight)
         theta0, (lo, hi) = self._theta_start_bounds(
             blocks, n, True, (scale0 * (1 - scale_tol), scale0 * (1 + scale_tol)),
-            (shift0 - shift_window, shift0 + shift_window))
+            (shift0 - shift_window, shift0 + shift_window), sigma_bounds)
         if p0 is not None:
             theta0[:n] = p0["centers"]
             theta0[n:2 * n] = np.log(p0["sigmas"])
@@ -1130,68 +1130,6 @@ class CoupledMeasurement:
         cost = float(np.sum(fit["result"].fun ** 2))
         return cost, fit
 
-    def fit_gauss_peaks_refine_alignment(
-        self,
-        n_peaks,
-        wl=280,
-        p0=None,
-        fit_baseline=False,
-        scale_bounds=(0.95, 1.05),
-        shift_bounds=(-100.0, 100.0),
-        method="Nelder-Mead",
-        **minimize_kwargs,
-    ):
-        """
-        Jointly refine (scale, shift) and the Gaussian elution-peak
-        parameters: for every trial (scale, shift) the outer optimizer
-        proposes, fit_gauss_peaks re-fits peak centers/sigmas/amplitudes
-        from scratch, and the outer loop minimizes that fit's residual
-        sum-of-squares.
-        Meant to be used once the alignment is already close (e.g. right
-        after reload_saxs, scale=1/shift=0) -- it only searches within
-        scale_bounds/shift_bounds around the current alignment, it's not
-        a global search. Warm-starts each trial's peak fit from the
-        previous best centers/sigmas to keep it fast-ish.
-        Returns (best_fit, alignment) -- best_fit is the same dict
-        fit_gauss_peaks returns, for the winning (scale, shift), and
-        self._alignment is updated in place to that (scale, shift).
-        """
-        from scipy.optimize import minimize
-        scale0 = self._alignment.get("scale", 1.0)
-        shift0 = self._alignment.get("shift", 0.0)
-        best = {"cost": np.inf, "p0": p0}
-        def objective(params):
-            a, b = params
-            a = float(np.clip(a, *scale_bounds))
-            b = float(np.clip(b, *shift_bounds))
-            cost, fit = self._gauss_peaks_cost_at_alignment(
-                a, b, n_peaks, wl, best["p0"], fit_baseline,
-            )
-            if cost < best["cost"]:
-                best.update(
-                    cost=cost, fit=fit, scale=a, shift=b,
-                    p0={"centers": fit["centers"], "sigmas": fit["sigmas"]},
-                )
-            return cost
-        res = minimize(
-            objective,
-            # options={'maxiter': 5},
-            x0=[scale0, shift0],
-            bounds=[scale_bounds, shift_bounds],
-            method=method,
-            **minimize_kwargs,
-        )
-        self._alignment["scale"] = best["scale"]
-        self._alignment["shift"] = best["shift"]
-        self._alignment["refinement"] = {
-            "method": "gauss_peak_joint_refinement",
-            "scale": best["scale"],
-            "shift": best["shift"],
-            "cost": best["cost"],
-            "success": res.success,
-        }
-        return best["fit"], self._alignment
-
     def run_joint_dream(self, *args, **kwargs):
         from jolymer.sas.joint_align_gauss_dream import run_joint_dream
         return run_joint_dream(self, *args, **kwargs)
@@ -1265,14 +1203,15 @@ class CoupledMeasurement:
     def _joint_residual(self, theta, n, blocks, fit_scale=True, baseline=False):
         return np.concatenate([r.ravel() for _, _, r in self._eval_blocks(theta, n, blocks, fit_scale, baseline)])
 
-    def _theta_start_bounds(self, blocks, n, fit_scale=True, scale_bounds=(0.95, 1.05), shift_bounds=(-100.0, 100.0)):
+    def _theta_start_bounds(self, blocks, n, fit_scale=True, scale_bounds=(0.95, 1.05), shift_bounds=(-100.0, 100.0), sigma_bounds=None):
         tU = blocks[1]["t"]
         c0, s0 = self._guess_peaks(tU, np.nansum(blocks[1]["Y"], axis=1), n)
         dt = np.median(np.diff(tU))
-        rng = tU.max() - tU.min()
+        smin, smax = (dt / 2, tU.max() - tU.min()) if sigma_bounds is None else sigma_bounds
+        s0 = np.clip(s0, smin * 1.01, smax * 0.99)
         x0 = [*c0, *np.log(s0), self._alignment.get("shift", 0.0)]
-        lo = [*np.full(n, tU.min()), *np.full(n, np.log(dt / 2)), shift_bounds[0]]
-        hi = [*np.full(n, tU.max()), *np.full(n, np.log(rng)), shift_bounds[1]]
+        lo = [*np.full(n, tU.min()), *np.full(n, np.log(smin)), shift_bounds[0]]
+        hi = [*np.full(n, tU.max()), *np.full(n, np.log(smax)), shift_bounds[1]]
         if fit_scale:
             x0.append(self._alignment.get("scale", 1.0))
             lo.append(scale_bounds[0])
