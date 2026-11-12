@@ -744,7 +744,7 @@ class CoupledMeasurement:
 
     @staticmethod
     def _block_report(b, G, A, n, baseline):
-        cols = [f"peak_{k + 1}" for k in range(n)]
+        cols = [f"peak_{k}" for k in range(n)]
         base = A[n] - A[n + 1] if baseline else np.zeros(A.shape[1])
         return dict(
             time=b["t"],
@@ -818,7 +818,7 @@ class CoupledMeasurement:
             t = np.asarray(tf(rep["time"]))
             ax.plot(t, rep["data"][ch], label=ch)
             ax.plot(t, rep["fit"][ch], label="fit")
-            for i, (k, v) in enumerate(rep["peaks"][ch].items(), start=1):
+            for i, (k, v) in enumerate(rep["peaks"][ch].items(), start=0):
                 v = np.asarray(v)
                 ax.plot(t, v, ":")
                 j = int(np.argmax(v))
