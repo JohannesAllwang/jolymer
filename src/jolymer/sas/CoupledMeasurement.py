@@ -843,9 +843,9 @@ class CoupledMeasurement:
         ax.legend()
         return fig, ax
 
-    @staticmethod
-    def _to_jsonable(obj):
+    def _to_jsonable(self, obj):
         import pandas as pd
+        from pathlib import PurePath
         if isinstance(obj, pd.DataFrame):
             return dict(columns=[str(c) for c in obj.columns],
                         index=obj.index.tolist(),
@@ -856,17 +856,20 @@ class CoupledMeasurement:
             return obj.tolist()
         if isinstance(obj, np.generic):
             return obj.item()
+        if isinstance(obj, PurePath):
+            return str(obj)
         if isinstance(obj, dict):
-            return {str(k): CoupledMeasurement._to_jsonable(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple, range)):
-            return [CoupledMeasurement._to_jsonable(v) for v in obj]
+            return {str(k): self._to_jsonable(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple, range, set)):
+            return [self._to_jsonable(v) for v in obj]
         return obj
 
     def save_gauss_peaks(self, path, fit):
         """
         Save the dict returned by fit_gauss_peaks to JSON. Peaks are listed by
         center, descending. The scipy result object is dropped (not serializable)
-        but its status is kept.
+        but its status is kept. Any extra keys added to `fit` (e.g. fit['ms'])
+        are saved too.
         """
         import json
         c = np.asarray(fit["centers"], float)
@@ -876,7 +879,11 @@ class CoupledMeasurement:
                       center_saxs=float(fit["centers_saxs"][i]),
                       sigma_saxs=float(fit["sigmas_saxs"][i]))
                  for i in order]
+        known = {"result", "cost", "scale", "shift", "centers", "sigmas",
+                 "centers_saxs", "sigmas_saxs", "saxs", "uv"}
+        extras = {k: self._to_jsonable(v) for k, v in fit.items() if k not in known}
         out = dict(
+            **extras,
             cost=fit["cost"], scale=fit["scale"], shift=fit["shift"],
             success=bool(fit["result"].success),
             peaks=peaks,
@@ -888,7 +895,7 @@ class CoupledMeasurement:
             uv=self._to_jsonable(fit["uv"]),
         )
         with open(path, "w") as f:
-            json.dump(out, f, indent=2)
+            json.dump(out, f, indent=2, default=str)
         return path
 
 
