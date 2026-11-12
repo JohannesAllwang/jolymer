@@ -857,9 +857,9 @@ class CoupledMeasurement:
         if isinstance(obj, np.generic):
             return obj.item()
         if isinstance(obj, dict):
-            return {str(k): self._to_jsonable(v) for k, v in obj.items()}
+            return {str(k): CoupledMeasurement._to_jsonable(v) for k, v in obj.items()}
         if isinstance(obj, (list, tuple, range)):
-            return [self._to_jsonable(v) for v in obj]
+            return [CoupledMeasurement._to_jsonable(v) for v in obj]
         return obj
 
     def save_gauss_peaks(self, path, fit):
