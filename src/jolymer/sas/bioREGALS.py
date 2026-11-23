@@ -116,45 +116,54 @@ class bioMIXTURE(mixture):
             uv_weight=d.get("uv_weight", 1.0),
         )
 
-    def extract_profile_selected(self, I, err, k,
-                                 cfrac=0.7,
-                                 chi2_max=3,
-                                 c_err=None):
-        notk = np.setdiff1d(np.arange(self.Nc), k)
-        c = self.concentrations
-        y = self.profiles
-        ck = c[:, k]
-        if ck.max()+ck.min() < 0:
-            ack = -ck.copy()
-        else:
-            ack = ck.copy()
-        mask = ack >= cfrac * np.max(ack)
-        if chi2_max is not None:
-            chi2 = self.get_chi2(I, err)
-            mask &= chi2 < chi2_max
-        frames = np.flatnonzero(mask)
-        if len(frames) == 0:
-            raise ValueError("No frames satisfy the extraction criteria.")
-        D = I - y[:, notk] @ c[:, notk].T
-        Dsel = D[:, mask]
-        csel = ack[mask]
-        errsel = err[:, mask]
-        m = csel / (csel @ csel)
-        Ik = Dsel @ m
-        sigma_I = np.sqrt(
-            (errsel ** 2) @ m**2
-        )
-        result = {
-            'I': Ik,
-            'err_I': sigma_I,
-            'frames': frames,
-            'mask': mask,
-            'weights': m,
-            'concentration': csel,
-        }
-        return result
+    def load_gauss_peaks(self, path):
+        import json
+        with open(path) as f:
+            fit = json.load(f)
+        t = dict(zip(fit['ms']['sequis'], fit['saxs']['time']))
+        for m in self.saxs_list:
+            if m.seqi in t:
+                m.time = t[m.seqi]
+        self._uv_on_saxs = None
+        self._autorg_df = None
+        return fit
 
-    def get_chi2(self, I, sigma):
+    def get_peaks(self, fit, use_saxs=True, sel=None):
+        k = ("center_saxs", "sigma_saxs") if use_saxs else ("center", "sigma")
+        peaks = [(p[k[0]], p[k[1]]) for p in fit["peaks"]]
+        return peaks if sel is None else [peaks[i] for i in sel]
+
+    def fit_peak_profiles(self, peaks):
+        if self._I is None:
+            self.build_saxs_matrix()
+        x = np.array([m.time for m in self.saxs_list])
+        C = np.column_stack([np.exp(-0.5 * ((x - c) / s) ** 2) for c, s in peaks])
+        W = 1.0 / self._sigma
+        P = np.zeros((self._I.shape[0], C.shape[1]))
+        for i in range(P.shape[0]):
+            P[i] = np.linalg.lstsq(C * W[i][:, None], self._I[i] * W[i], rcond=None)[0]
+        self._C, self._P = C, P
+        return C, P
+
+    def get_chi2(self):
+        return np.mean(((self._I - self._P @ self._C.T) / self._sigma) ** 2, axis=0)
+
+    def extract_profile_selected(self, k, cfrac=0.7, chi2_max=3):
+        I, err, c, y = self._I, self._sigma, self._C, self._P
+        notk = np.setdiff1d(np.arange(c.shape[1]), k)
+        ck = c[:, k]
+        mask = ck >= cfrac * ck.max()
+        if chi2_max is not None:
+            mask &= self.get_chi2() < chi2_max
+        if not mask.any():
+            raise ValueError("No frames satisfy the extraction criteria.")
+        D = I[:, mask] - y[:, notk] @ c[mask][:, notk].T
+        csel = ck[mask]
+        m = csel / (csel @ csel)
+        return dict(I=D @ m, err_I=np.sqrt(err[:, mask] ** 2 @ m ** 2), frames=np.flatnonzero(mask),
+                    mask=mask, weights=m, concentration=csel)
+
+    def get_chi2_old(self, I, sigma):
         """
         Calculate reduced chi-square for every frame.
         Parameters

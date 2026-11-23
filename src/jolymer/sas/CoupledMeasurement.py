@@ -756,11 +756,14 @@ class CoupledMeasurement:
 
     def fit_gauss_peaks(self, n_peaks, wl=280, p0=None, baseline=False, fit_alignment=True,
                         fit_scale=False, shift_window=100.0, scale_tol=0.05, uv_weight=1.0,
-                        scan_points=401, apply=False, sigma_bounds=None, **ls_kwargs):
+                        scan_points=401, apply=False, sigma_bounds=None, with_tau=False,
+                        **ls_kwargs):
         """
         Joint fit of SAXS I0 and UV absorbance (one or many wavelengths) as a sum of
-        Gaussians on their native time grids, no interpolation. UV centers/sigmas are
-        shared; the SAXS block sees them as c' = scale*c + shift, s' = scale*s.
+        peaks on their native time grids, no interpolation. UV centers/sigmas(/taus) are
+        shared; the SAXS block sees them as c' = scale*c + shift, s' = scale*s, tau' = scale*tau.
+        with_tau=False: Gaussians. with_tau=True: exponentially modified Gaussians
+        (one tau per peak; tau -> 0 is the Gaussian). p0 may carry "taus".
         shift/scale bounds are relative to the current self._alignment.
         apply=True stores the fitted (scale, shift) in self._alignment; call
         reload_saxs() afterwards to move SAXS onto the UV time axis.
@@ -772,14 +775,16 @@ class CoupledMeasurement:
         blocks = self._build_blocks(wl, uv_weight)
         theta0, (lo, hi) = self._theta_start_bounds(
             blocks, n, True, (scale0 * (1 - scale_tol), scale0 * (1 + scale_tol)),
-            (shift0 - shift_window, shift0 + shift_window), sigma_bounds)
+            (shift0 - shift_window, shift0 + shift_window), sigma_bounds, with_tau)
         if p0 is not None:
             theta0[:n] = p0["centers"]
             theta0[n:2 * n] = np.log(p0["sigmas"])
+            if with_tau and "taus" in p0:
+                theta0[2 * n + 2:] = np.log(p0["taus"])
         theta0 = np.clip(theta0, lo, hi)
         free = np.ones(len(theta0), bool)
         if not fit_alignment:
-            free[2 * n:] = False
+            free[2 * n:2 * n + 2] = False      # shift, scale only; taus stay free
         elif not fit_scale:
             free[2 * n + 1] = False
         if fit_alignment:
@@ -791,19 +796,22 @@ class CoupledMeasurement:
         res = least_squares(fun, theta0[free], bounds=(lo[free], hi[free]), x_scale="jac", **ls_kwargs)
         theta = theta0.copy()
         theta[free] = res.x
-        # sort peaks by center, descending (centers are theta[:n], log-sigmas theta[n:2n])
+        # sort peaks by center, descending; every per-peak block gets the same order
         order = np.argsort(-theta[:n])
         theta[:n] = theta[:n][order]
         theta[n:2 * n] = theta[n:2 * n][order]
-        c, s, scale, shift = self._unpack_theta(theta, n, True)
+        theta[2 * n + 2:] = theta[2 * n + 2:][order]      # empty for Gaussian: no-op
+        c, s, scale, shift, taus = self._unpack_theta(theta, n, True)
         ev = self._eval_blocks(theta, n, blocks, True, baseline)
         saxs, uv = (self._block_report(b, G, A, n, baseline) for b, (G, A, _) in zip(blocks, ev))
         wl_arr = np.atleast_1d(np.asarray(list(wl) if isinstance(wl, range) else wl, float))
         uv["wl"] = wl_arr if len(wl_arr) == len(uv["data"].columns) else np.arange(len(uv["data"].columns))
         if apply and fit_alignment:
             self._store_alignment(scale, shift, 2 * res.cost, res.success)
-        return dict(result=res, cost=float(2 * res.cost), centers=c, sigmas=s, scale=float(scale),
-                    shift=float(shift), centers_saxs=scale * c + shift, sigmas_saxs=scale * s,
+        return dict(result=res, cost=float(2 * res.cost), centers=c, sigmas=s, taus=taus,
+                    scale=float(scale), shift=float(shift),
+                    centers_saxs=scale * c + shift, sigmas_saxs=scale * s,
+                    taus_saxs=None if taus is None else scale * taus,
                     saxs=saxs, uv=uv)
 
     def plot_gauss_peaks(self, fit, max_uv=3, channels=None):
@@ -842,6 +850,66 @@ class CoupledMeasurement:
         ax.set_ylabel("Peak amplitude")
         ax.legend()
         return fig, ax
+
+    def plot_gauss_peak_summary(self, fit, idxs,  wls=[260, 280, 350, 420]):
+        import re
+        import matplotlib.pyplot as plt
+        from ..jocolors import tstum1, tstum7, tstum0, tstum3, tstum20, tstum14
+        fig,  axes = plt.subplots(nrows=2, ncols=2, figsize=(7, 7))
+        (axx, axI0), (axu, axU) = axes
+        targets = [f"Abs{wl}" for wl in wls]
+        xval = fit['saxs']['time']
+        yval = fit['saxs']['data']['values']
+        axI0.plot(xval, yval, color='0.6')
+        col_idxs = []
+        for target in targets:
+            cols = list(fit['uv']['data']['columns'])
+            if target in cols:
+                col_idx = cols.index(target)
+            else:
+                # fallback: regex match, e.g. 'Abs280' or 'Abs280.0'
+                matches = [i for i, c in enumerate(cols) if re.fullmatch(rf"{target}(\.0+)?", str(c))]
+                if not matches:
+                    raise KeyError(f"No column matching {target!r}; available: {cols[:10]}...")
+                col_idx = matches[0]
+            col_idxs.append(col_idx)
+        xval = fit['uv']['time']
+        yvals = np.array(fit['uv']['data']['values'])[:, col_idxs]
+        normalization_factors = []
+        shifts = []
+        for shift, yval in enumerate(yvals.T):
+            axU.plot(xval, yval/yval.max()+shift, color='0.6')
+            normalization_factors.append(yval.max())
+            shifts.append(shift)
+        # --- component curves and peak amplitudes ---
+        for i, color in zip(idxs, [tstum1, tstum7, tstum0, tstum3, tstum20, tstum14]):
+            axx.loglog(q, P[i] / P[i].max(), label=f'P{i}', linestyle='-', color=color)
+            xs = [float(value.split('bs')[1]) for value in spectra['index']]
+            ys = np.array([value[i] for value in spectra['values']])
+            axu.plot(xs, ys / ys.max(), color=color, label=f'P{i}')
+            axI0.plot(fit['saxs']['time'],
+                      fit['saxs']['peaks']['I0'][f'peak_{i+1}'], color=color)
+            for shift, target, normalization_factor in zip(shifts, targets, normalization_factors):
+                axU.plot(fit['uv']['time'],
+                         np.array(fit['uv']['peaks'][target][f'peak_{i+1}'])/normalization_factor+shift, color=color)
+                axU.annotate(f"{target}", xy=(np.array(fit['uv']['time']).min()+10,
+                                              shift))
+        axx.set_xlabel(r'$q$ (Å$^{-1}$)')
+        axx.set_ylabel(r'$P(q)$ / $P_{max}$')
+        axx.set_title('SAXS components')
+        axI0.set_xlabel('Time (s)')
+        axI0.set_ylabel(r'$I_0$ (a.u.)')
+        axI0.set_title('SAXS elution profile')
+        axu.set_xlabel('Wavelength (nm)')
+        axu.set_ylabel('Normalized absorbance')
+        axu.set_ylim(0, 1.01)
+        axu.set_title('UV spectra')
+        axU.set_xlabel('Time (s)')
+        axU.set_ylabel(f'Absorbance at nm (a.u.)')
+        axU.set_title('UV elution profile')
+        axx.legend(frameon=False)
+        axu.legend(frameon=False)
+        return fig, axes
 
     def _to_jsonable(self, obj):
         import pandas as pd
@@ -898,6 +966,122 @@ class CoupledMeasurement:
             json.dump(out, f, indent=2, default=str)
         return path
 
+    def load_gauss_peaks(self, path):
+        import json
+        with open(path) as f:
+            fit = json.load(f)
+        t = dict(zip(fit['ms']['sequis'], fit['saxs']['time']))
+        for m in self.saxs_list:
+            if m.seqi in t:
+                m.time = t[m.seqi]
+        self.saxs_list.ms = [m for m in self.saxs_list if m.seqi in t]
+        self._uv_on_saxs = None
+        self._autorg_df = None
+        return fit
+
+    def get_peaks(self, fit, use_saxs=True, sel=None):
+        k = ("center_saxs", "sigma_saxs") if use_saxs else ("center", "sigma")
+        peaks = [(p[k[0]], p[k[1]]) for p in fit["peaks"]]
+        return peaks if sel is None else [peaks[i] for i in sel]
+
+    def fit_peak_profiles(self, peaks):
+        if self._I is None:
+            self.build_saxs_matrix()
+        x = np.array([m.time for m in self.saxs_list])
+        C = np.column_stack([np.exp(-0.5 * ((x - c) / s) ** 2) for c, s in peaks])
+        valid = np.isfinite(self._I) & np.isfinite(self._sigma) & (self._sigma > 0)
+        P = np.zeros((self._I.shape[0], C.shape[1]))
+        for i in range(P.shape[0]):
+            v = valid[i]
+            if v.sum() < C.shape[1]:
+                continue
+            w = 1.0 / self._sigma[i, v]
+            P[i] = np.linalg.lstsq(C[v] * w[:, None], self._I[i, v] * w, rcond=None)[0]
+        self._C, self._P, self._valid = C, P, valid
+        return C, P
+
+    def get_chi2(self):
+        r = np.where(self._valid, (self._I - self._P @ self._C.T) / np.where(self._valid, self._sigma, 1.0), 0.0)
+        return (r ** 2).sum(axis=0) / np.maximum(self._valid.sum(axis=0), 1)
+
+    def extract_profile_selected(self, k, cfrac=0.7, chi2_max=3):
+        I, err, c, y = self._I, self._sigma, self._C, self._P
+        notk = np.setdiff1d(np.arange(c.shape[1]), k)
+        ck = c[:, k]
+        mask = ck >= cfrac * ck.max()
+        if chi2_max is not None:
+            mask &= self.get_chi2() < chi2_max
+        if not mask.any():
+            raise ValueError("No frames satisfy the extraction criteria.")
+        D = I[:, mask] - y[:, notk] @ c[mask][:, notk].T
+        csel = ck[mask]
+        m = csel / (csel @ csel)
+        return dict(I=D @ m, err_I=np.sqrt(err[:, mask] ** 2 @ m ** 2), frames=np.flatnonzero(mask),
+                    mask=mask, weights=m, concentration=csel)
+
+    def plot_gauss_summary(self, fit, idxs, wls=(260, 280, 350, 420), results=None):
+        import re
+        import matplotlib.pyplot as plt
+        from ..jocolors import tstum1, tstum7, tstum0, tstum3, tstum20, tstum14
+        colors = [tstum1, tstum7, tstum0, tstum3, tstum20, tstum14]
+        results = results or {}
+        if self._q is None:
+            self.build_saxs_matrix()
+        fig, ((axx, axI0), (axu, axU)) = plt.subplots(nrows=2, ncols=2, figsize=(7, 7))
+        t_saxs = np.array(fit['saxs']['time'])
+        t_uv = np.array(fit['uv']['time'])
+        cols = [str(c) for c in fit['uv']['data']['columns']]
+        targets = [f"Abs{wl}" for wl in wls]
+        col_idxs = []
+        for target in targets:
+            hits = [j for j, c in enumerate(cols) if re.fullmatch(rf"{target}(\.0+)?", c)]
+            if not hits:
+                raise KeyError(f"No column matching {target!r}; available: {cols[:10]}...")
+            col_idxs.append(hits[0])
+        yuv = np.array(fit['uv']['data']['values'])[:, col_idxs]
+        norms = yuv.max(axis=0)
+        axI0.plot(t_saxs, np.array(fit['saxs']['data']['values'])[:, 0], color='0.6')
+        for shift, (target, y, nrm) in enumerate(zip(targets, yuv.T, norms)):
+            axU.plot(t_uv, y / nrm + shift, color='0.6')
+            axU.annotate(target, xy=(t_uv.min() + 10, shift))
+        amp = fit['uv']['amplitudes']
+        xs = [float(re.sub(r"[^\d.]", "", str(name))) for name in amp['index']]
+        amp_vals = np.array(amp['values'])
+        for i, color in zip(idxs, colors):
+            y, e = (results[i]['I'], results[i]['err_I']) if i in results else (self._P[:, i], None)
+            nrm = np.nanmax(y)
+            axx.errorbar(self._q, y / nrm, None if e is None else e / nrm, color=color, label=f'P{i}', linewidth=1, elinewidth=0.5)
+            axu.plot(xs, amp_vals[:, i] / amp_vals[:, i].max(), label=f'P{i}', color=color)
+            peak_I0 = np.array(fit['saxs']['peaks']['I0'][f'peak_{i+1}'])
+            axI0.plot(t_saxs, peak_I0, color=color)
+            if i in results:
+                used = np.array([m.seqi for m in self.saxs_list])[results[i]['mask']]
+                sel = np.isin(fit['ms']['sequis'], used)
+                axI0.vlines(t_saxs[sel], 0, peak_I0[sel], color=color, linewidth=0.2)
+            for shift, target, nrm in zip(range(len(targets)), targets, norms):
+                peak_uv = np.array(fit['uv']['peaks'][target][f'peak_{i+1}'])
+                axU.plot(t_uv, peak_uv / nrm + shift, color=color)
+        axU.sharex(axI0)
+        axx.set_xscale('log')
+        axx.set_yscale('log')
+        axx.set_title('Extracted SAXS profiles')
+        axx.set_xlabel(r'$q$ (Å$^{-1}$)')
+        axx.set_ylabel(r'$P(q)$ / $P_{max}$')
+        axx.set_title('SAXS components')
+        axI0.set_xlabel('Time (s)')
+        axI0.set_ylabel(r'$I_0$ (a.u.)')
+        axI0.set_title('SAXS elution profile')
+        axu.set_xlabel('Wavelength (nm)')
+        axu.set_ylabel('Normalized absorbance')
+        axu.set_ylim(0, 1.01)
+        axu.set_title('UV spectra')
+        axU.set_xlabel('Time (s)')
+        axU.set_ylabel('Absorbance (a.u.), offset')
+        axU.set_title('UV elution profile')
+        axx.legend(frameon=False)
+        axu.legend(frameon=False)
+        fig.tight_layout()
+        return fig, ((axx, axI0), (axu, axU))
 
     def refine_uv_alignment_scale_shift(
         self,
@@ -1178,29 +1362,42 @@ class CoupledMeasurement:
             "success": res.success,
         }
 
-    def _gauss_peaks_cost_at_alignment(self, scale, shift, n_peaks, wl, p0, fit_baseline):
-        """Run fit_gauss_peaks at a trial (scale, shift), restoring the
-        previous alignment afterwards. Returns (cost, fit_dict)."""
-        saved_scale = self._alignment["scale"]
-        saved_shift = self._alignment["shift"]
-        self._alignment["scale"] = scale
-        self._alignment["shift"] = shift
+    def _gauss_peaks_cost_at_alignment(self, scale, shift, n_peaks, wl, p0, baseline, **kw):
+        saved = (self._alignment["scale"], self._alignment["shift"])
+        self._alignment["scale"], self._alignment["shift"] = scale, shift
         try:
-            fit = self.fit_gauss_peaks(n_peaks, wl=wl, p0=p0, fit_baseline=fit_baseline)
+            fit = self.fit_gauss_peaks(n_peaks, wl=wl, p0=p0, baseline=baseline,
+                                       fit_alignment=False, **kw)
         finally:
-            self._alignment["scale"] = saved_scale
-            self._alignment["shift"] = saved_shift
-        cost = float(np.sum(fit["result"].fun ** 2))
-        return cost, fit
+            self._alignment["scale"], self._alignment["shift"] = saved
+        return float(np.sum(fit["result"].fun ** 2)), fit
 
     def run_joint_dream(self, *args, **kwargs):
         from jolymer.sas.joint_align_gauss_dream import run_joint_dream
         return run_joint_dream(self, *args, **kwargs)
 
     @staticmethod
-    def _gauss_design(t, centers, sigmas, baseline=False):
-        G = np.exp(-(t[:, None] - centers[None, :])**2 / (2 * sigmas[None, :]**2))
-        return np.column_stack([G, np.ones_like(t), -np.ones_like(t)]) if baseline else G
+    def _gauss_design(t, centers, sigmas, taus=None):
+        """Peak matrix with unit height. taus=None -> Gaussian.
+        taus given -> exponentially modified Gaussian; taus -> 0 recovers the Gaussian.
+        Uses exp(-u^2/2) * erfcx(...) (== EMG up to a constant) so it never overflows."""
+        t = np.asarray(t, float)[:, None]
+        d = t - np.asarray(centers)[None, :]
+        s = np.asarray(sigmas)[None, :]
+        if taus is None:
+            return np.exp(-d**2 / (2 * s**2))
+        from scipy.special import erfcx
+        tau = np.asarray(taus)[None, :]
+        G = np.exp(-d**2 / (2 * s**2)) * erfcx((s / tau - d / s) / np.sqrt(2))
+        return G / np.maximum(G.max(axis=0, keepdims=True), 1e-300)
+
+    @staticmethod
+    def _with_baseline(G, t, baseline):
+        # +1/-1 columns = signed constant baseline under the non-negative solver
+        if not baseline:
+            return G
+        one = np.ones(len(t))
+        return np.column_stack([G, one, -one])
 
     @staticmethod
     def _solve_amplitudes(G, Y):
@@ -1218,8 +1415,10 @@ class CoupledMeasurement:
 
     @staticmethod
     def _unpack_theta(theta, n, fit_scale):
+        k = 2 * n + 1 + int(fit_scale)
         scale = theta[2 * n + 1] if fit_scale else 1.0
-        return theta[:n], np.exp(theta[n:2 * n]), scale, theta[2 * n]
+        taus = np.exp(theta[k:k + n]) if len(theta) > k else None
+        return theta[:n], np.exp(theta[n:2 * n]), scale, theta[2 * n], taus
 
     @staticmethod
     def _guess_peaks(t, y, n):
@@ -1253,11 +1452,15 @@ class CoupledMeasurement:
                 dict(t=tU, Y=YU, cw=np.full(len(cols), 1 / su), affine=False, names=cols)]
 
     def _eval_blocks(self, theta, n, blocks, fit_scale=True, baseline=False):
-        c, s, scale, shift = self._unpack_theta(theta, n, fit_scale)
+        c, s, scale, shift, taus = self._unpack_theta(theta, n, fit_scale)
         out = []
         for b in blocks:
-            cc, ss = (scale * c + shift, scale * s) if b["affine"] else (c, s)
-            G = self._gauss_design(b["t"], cc, ss, baseline)
+            if b["affine"]:   # every time-like parameter moves with the alignment
+                cc, ss = scale * c + shift, scale * s
+                tt = None if taus is None else scale * taus
+            else:
+                cc, ss, tt = c, s, taus
+            G = self._with_baseline(self._gauss_design(b["t"], cc, ss, tt), b["t"], baseline)
             A = self._solve_amplitudes(G, b["Y"])
             d = G @ A - b["Y"]
             out.append((G, A, np.where(np.isfinite(d), d, 0.0) * b["cw"]))
@@ -1266,7 +1469,8 @@ class CoupledMeasurement:
     def _joint_residual(self, theta, n, blocks, fit_scale=True, baseline=False):
         return np.concatenate([r.ravel() for _, _, r in self._eval_blocks(theta, n, blocks, fit_scale, baseline)])
 
-    def _theta_start_bounds(self, blocks, n, fit_scale=True, scale_bounds=(0.95, 1.05), shift_bounds=(-100.0, 100.0), sigma_bounds=None):
+    def _theta_start_bounds(self, blocks, n, fit_scale=True, scale_bounds=(0.95, 1.05),
+                            shift_bounds=(-100.0, 100.0), sigma_bounds=None, with_tau=False):
         tU = blocks[1]["t"]
         c0, s0 = self._guess_peaks(tU, np.nansum(blocks[1]["Y"], axis=1), n)
         dt = np.median(np.diff(tU))
@@ -1277,8 +1481,9 @@ class CoupledMeasurement:
         hi = [*np.full(n, tU.max()), *np.full(n, np.log(smax)), shift_bounds[1]]
         if fit_scale:
             x0.append(self._alignment.get("scale", 1.0))
-            lo.append(scale_bounds[0])
-            hi.append(scale_bounds[1])
+            lo.append(scale_bounds[0]); hi.append(scale_bounds[1])
+        if with_tau:   # start at tau ~ sigma, same bounds as sigma
+            x0 += list(np.log(s0)); lo += [np.log(smin)] * n; hi += [np.log(smax)] * n
         return np.array(x0, float), (np.array(lo), np.array(hi))
 
     def _store_alignment(self, scale, shift, cost, success):
