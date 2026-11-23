@@ -1386,10 +1386,14 @@ class CoupledMeasurement:
         s = np.asarray(sigmas)[None, :]
         if taus is None:
             return np.exp(-d**2 / (2 * s**2))
-        from scipy.special import erfcx
+        from scipy.special import erfc, erfcx
         tau = np.asarray(taus)[None, :]
-        G = np.exp(-d**2 / (2 * s**2)) * erfcx((s / tau - d / s) / np.sqrt(2))
-        return G / np.maximum(G.max(axis=0, keepdims=True), 1e-300)
+        u, r = d / s, s / tau
+        x = (r - u) / np.sqrt(2)
+        logG = np.where(x >= 0,
+                        -u**2 / 2 + np.log(erfcx(np.maximum(x, 0))),
+                        r**2 / 2 - u * r + np.log(erfc(np.minimum(x, 0))))
+        return np.exp(logG - logG.max(axis=0, keepdims=True))
 
     @staticmethod
     def _with_baseline(G, t, baseline):
