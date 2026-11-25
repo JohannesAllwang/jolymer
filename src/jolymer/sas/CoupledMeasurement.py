@@ -942,13 +942,16 @@ class CoupledMeasurement:
         import json
         c = np.asarray(fit["centers"], float)
         order = np.argsort(-c)  # no-op for fresh fits, guards older fit dicts
+        taus, taus_s = fit.get("taus"), fit.get("taus_saxs")
         peaks = [dict(center=float(fit["centers"][i]),
                       sigma=float(fit["sigmas"][i]),
                       center_saxs=float(fit["centers_saxs"][i]),
-                      sigma_saxs=float(fit["sigmas_saxs"][i]))
+                      sigma_saxs=float(fit["sigmas_saxs"][i]),
+                      **({} if taus is None else dict(tau=float(taus[i]), tau_saxs=float(taus_s[i]))))
                  for i in order]
         known = {"result", "cost", "scale", "shift", "centers", "sigmas",
-                 "centers_saxs", "sigmas_saxs", "saxs", "uv"}
+                 "centers_saxs", "sigmas_saxs", "saxs", "uv",
+                 "taus", "taus_saxs"}
         extras = {k: self._to_jsonable(v) for k, v in fit.items() if k not in known}
         out = dict(
             **extras,
@@ -980,15 +983,17 @@ class CoupledMeasurement:
         return fit
 
     def get_peaks(self, fit, use_saxs=True, sel=None):
-        k = ("center_saxs", "sigma_saxs") if use_saxs else ("center", "sigma")
-        peaks = [(p[k[0]], p[k[1]]) for p in fit["peaks"]]
+        """(center, sigma) per peak, or (center, sigma, tau) if the fit has taus."""
+        k = ("center_saxs", "sigma_saxs", "tau_saxs") if use_saxs else ("center", "sigma", "tau")
+        peaks = [tuple(p[key] for key in k if p.get(key) is not None) for p in fit["peaks"]]
         return peaks if sel is None else [peaks[i] for i in sel]
 
     def fit_peak_profiles(self, peaks):
         if self._I is None:
             self.build_saxs_matrix()
         x = np.array([m.time for m in self.saxs_list])
-        C = np.column_stack([np.exp(-0.5 * ((x - c) / s) ** 2) for c, s in peaks])
+        # peaks rows are (c, s) or (c, s, tau); unpacking the columns picks Gaussian or EMG
+        C = self._gauss_design(x, *np.asarray(peaks, float).T)
         valid = np.isfinite(self._I) & np.isfinite(self._sigma) & (self._sigma > 0)
         P = np.zeros((self._I.shape[0], C.shape[1]))
         for i in range(P.shape[0]):
