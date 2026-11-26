@@ -869,24 +869,44 @@ class CoupledMeasurement:
                     taus_saxs=None if taus is None else scale * taus,
                     saxs=saxs, uv=uv)
 
-    def plot_gauss_peaks(self, fit, max_uv=3, channels=None):
+    def component_guinier(self, results, ref=0, **kw):
+        m = self.saxs_list[ref]
+        out = {}
+        for k, r in results.items():
+            df = pd.DataFrame({"q": self._q, "I": r["I"], "err_I": r["err_I"]})
+            # return df
+            try:
+                g = m.get_rg(df=df, **kw)
+                out[k] = dict(I0=float(np.nan_to_num(g["I0"])), Rg=g["Rg"],
+                              err_I0=float(np.nan_to_num(g["err_I0"])),
+                              err_Rg=g["err_Rg"], qRg=g["qRg"])
+            except ValueError:
+                out[k] = dict(I0=0.0, Rg=np.nan, err_I0=0.0, err_Rg=np.nan, qRg=np.nan)
+        return out
+
+    def plot_gauss_peaks(self, fit, max_uv=3, max_saxs=3, channels=None, saxs_channels=None):
         import matplotlib.pyplot as plt
-        names = list(fit["uv"]["data"].columns)
+        def pick(names, k):
+            idx = np.unique(np.linspace(0, len(names) - 1, min(k, len(names))).astype(int))
+            return [names[i] for i in idx]
         if channels is None:
-            channels = [names[i] for i in np.unique(np.linspace(0, len(names) - 1, min(max_uv, len(names))).astype(int))]
-        panels = [("I0", fit["saxs"], lambda t: (t - fit["shift"]) / fit["scale"])]
+            channels = pick(list(fit["uv"]["data"].columns), max_uv)
+        if saxs_channels is None:
+            saxs_channels = pick(list(fit["saxs"]["data"].columns), max_saxs)
+        to_uv = lambda t: (t - fit["shift"]) / fit["scale"]    # SAXS time -> UV time
+        panels = [(c, fit["saxs"], to_uv) for c in saxs_channels]
         panels += [(c, fit["uv"], lambda t: t) for c in channels]
-        fig, axes = plt.subplots(len(panels), 1, figsize=(7, 3 * len(panels)), sharex=True, squeeze=False)
+        fig, axes = plt.subplots(len(panels), 1, figsize=(7, 3 * len(panels)),
+                                 sharex=True, squeeze=False)
         for ax, (ch, rep, tf) in zip(axes[:, 0], panels):
-            t = np.asarray(tf(rep["time"]))
+            t = np.asarray(tf(np.asarray(rep["time"])))
             ax.plot(t, rep["data"][ch], label=ch)
             ax.plot(t, rep["fit"][ch], label="fit")
-            for i, (k, v) in enumerate(rep["peaks"][ch].items(), start=0):
+            for k, v in rep["peaks"][ch].items():
                 v = np.asarray(v)
                 ax.plot(t, v, ":")
                 j = int(np.argmax(v))
-                ax.annotate(f"P{i}", xy=(t[j], v[j]),
-                            fontsize='xx-small')
+                ax.annotate(k.replace("peak_", "P"), xy=(t[j], v[j]), fontsize='xx-small')
             ax.set_ylabel(ch)
             ax.legend()
         axes[-1, 0].set_xlabel("UV time (s)")
@@ -1121,12 +1141,6 @@ class CoupledMeasurement:
             nrm = np.nanmax(y)
             axx.errorbar(self._q, y / nrm, None if e is None else e / nrm, color=color, label=f'P{i}', linewidth=1, elinewidth=0.5)
             axu.plot(xs, amp_vals[:, i] / amp_vals[:, i].max(), label=f'P{i}', color=color)
-            peak_I0 = np.array(fit['saxs']['peaks']['I0'][f'peak_{i+1}'])
-            axI0.plot(t_saxs, peak_I0, color=color)
-            if i in results:
-                used = np.array([m.seqi for m in self.saxs_list])[results[i]['mask']]
-                sel = np.isin(fit['ms']['sequis'], used)
-                axI0.vlines(t_saxs[sel], 0, peak_I0[sel], color=color, linewidth=0.2)
             for shift, target, nrm in zip(range(len(targets)), targets, norms):
                 peak_uv = np.array(fit['uv']['peaks'][target][f'peak_{i+1}'])
                 axU.plot(t_uv, peak_uv / nrm + shift, color=color)
@@ -1139,6 +1153,13 @@ class CoupledMeasurement:
                                   color=color, alpha=0.2, linewidth=0)
                 axI0.errorbar(fit['centers_saxs'][i], g['I0'], g['err_I0'],
                               fmt='o', mfc='none', color=color)
+            else:
+                peak_I0 = np.array(fit['saxs']['peaks']['I0'][f'peak_{i+1}'])
+                axI0.plot(t_saxs, peak_I0, color=color)
+                if i in results:
+                    used = np.array([m.seqi for m in self.saxs_list])[results[i]['mask']]
+                    sel = np.isin(fit['ms']['sequis'], used)
+                    axI0.vlines(t_saxs[sel], 0, peak_I0[sel], color=color, linewidth=0.2)
         axU.sharex(axI0)
         axx.set_xscale('log')
         axx.set_yscale('log')
