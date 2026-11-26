@@ -810,6 +810,8 @@ class CoupledMeasurement:
     def fit_gauss_peaks(self, n_peaks, wl=280, p0=None, baseline=False, fit_alignment=True,
                         fit_scale=False, shift_window=100.0, scale_tol=0.05, uv_weight=1.0,
                         scan_points=401, apply=False, sigma_bounds=None, with_tau=False,
+                        oversample=1.0,
+                        average=False,
                         q=None, dmax='auto',
                         **ls_kwargs):
         """
@@ -826,7 +828,7 @@ class CoupledMeasurement:
         n = n_peaks
         a = self._alignment
         scale0, shift0 = a.get("scale", 1.0), a.get("shift", 0.0)
-        blocks = self._build_blocks(q=q, wl=wl, uv_weight=uv_weight, dmax=dmax)
+        blocks = self._build_blocks(q=q, wl=wl, uv_weight=uv_weight, dmax=dmax, oversample=oversample, average=average)
         theta0, (lo, hi) = self._theta_start_bounds(
             blocks, n, True, (scale0 * (1 - scale_tol), scale0 * (1 + scale_tol)),
             (shift0 - shift_window, shift0 + shift_window), sigma_bounds, with_tau)
@@ -1525,6 +1527,7 @@ class CoupledMeasurement:
 
     def _build_blocks(self, q=None, wl=280, uv_weight=1.0,
                       oversample=1.0,
+                      average=False,
                       saxs_weight=1.0, q_stride=1, dmax='auto'):
         a = self._alignment
         if q is None:
