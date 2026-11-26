@@ -1523,7 +1523,9 @@ class CoupledMeasurement:
         med = np.nanmedian(d, axis=0)
         return 1.4826 * np.nanmedian(np.abs(d - med), axis=0) / np.sqrt(2)
 
-    def _build_blocks(self, q=None, wl=280, uv_weight=1.0, saxs_weight=1.0, q_stride=1, dmax='auto'):
+    def _build_blocks(self, q=None, wl=280, uv_weight=1.0,
+                      oversample=1.0,
+                      saxs_weight=1.0, q_stride=1, dmax='auto'):
         a = self._alignment
         if q is None:
             dfX = self.get_saxs_scalar(a["saxs_kind"], qmin=a["qmin"], qmax=a["qmax"],
