@@ -861,9 +861,6 @@ class CoupledMeasurement:
         uv["wl"] = wl_arr if len(wl_arr) == len(uv["data"].columns) else np.arange(len(uv["data"].columns))
         if apply and fit_alignment:
             self._store_alignment(scale, shift, 2 * res.cost, res.success)
-        if "I0" not in saxs['amplitudes']['index']:
-            saxs['amplitudes']['index'].appens("I0")
-            saxs['amplitudes']['values'].append({} [m.get_rg
         return dict(result=res, cost=float(2 * res.cost), centers=c, sigmas=s, taus=taus,
                     scale=float(scale), shift=float(shift),
                     centers_saxs=scale * c + shift, sigmas_saxs=scale * s,
