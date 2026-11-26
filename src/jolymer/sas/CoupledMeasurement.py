@@ -432,24 +432,77 @@ class CoupledMeasurement:
                 'time': times,
                 'I0': rgdf.I0,
                 'errI0': rgdf.err_I0})
-        elif kind == "Iq":
-            idx = np.argmin(np.abs(q - qstar))
-            frames = []
-            times = []
-            I0s = []
-            errI0s = []
-            for frame, m in enumerate(self.saxs_list):
-                frames.append(m.seqi)
-                times.append(m.time)
-                I0s.append(float(m.get_data()['I'][idx]))
-                errI0s.append(float(m.get_data()['err_I'][idx]))
-            return pd.DataFrame({
-                'frame': frames,
-                'time': times,
-                'I0': I0s,
-                'errI0': errI0s})
+        elif kind in ("Iq", "average"):
+            if kind == "Iq":
+                sel = np.zeros(len(q), bool)
+                sel[np.argmin(np.abs(q - qstar))] = True
+            else:
+                sel = (q >= qmin) & (q <= qmax)
+                if not sel.any():
+                    raise ValueError(f"No q points in [{qmin}, {qmax}]")
+            frames, times, I0s, errs = [], [], [], []
+            for m in self.saxs_list:
+                d = m.get_data()
+                I, e = d['I'].to_numpy()[sel], d['err_I'].to_numpy()[sel]
+                frames.append(m.seqi); times.append(m.time)
+                I0s.append(I.mean())
+                errs.append(np.sqrt(np.sum(e**2)) / sel.sum())
+            return pd.DataFrame({'frame': frames, 'time': times, 'I0': I0s, 'errI0': errs})
+
+    def estimate_dmax(self, default=350.0, factor=3.5, min_frac=0.2):
+        """
+        Rough Dmax for choosing Shannon channels. Uses the autorg table if
+        available (90th percentile of Rg over frames with I0 > min_frac * max),
+        otherwise falls back to `default` (about IgM size, in the same units as 1/q).
+        """
+        df = getattr(self, "_autorg_df", None)
+        if df is None:
+            try:
+                df = self.load_autorg()
+            except Exception:
+                return default
+        ok = (np.isfinite(df.Rg) & np.isfinite(df.I0)
+              & (df.I0 > min_frac * np.nanmax(df.I0)))
+        if ok.sum() < 3:
+            return default
+        return factor * float(np.nanpercentile(df.Rg[ok], 90))
+
+    def get_saxs_range(self, qmin, qmax, dmax=None, oversample=1.0, average=False):
+        """
+        One row per frame; 'I' / 'errI' hold arrays over the selected channels.
+        dmax=None -> every grid point in range. Otherwise Shannon channels with
+        spacing pi/(dmax*oversample) (q and dmax in reciprocal units, e.g. 1/Å and Å).
+        average=False: nearest grid point to each Shannon target.
+        average=True : mean of the grid points assigned to each target.
+        Channel q values are in df.attrs['q'].
+        """
+        q = self._q if self._q is not None else self.build_saxs_matrix()[0]
+        inr = np.flatnonzero((q >= qmin) & (q <= qmax))
+        if inr.size == 0:
+            raise ValueError(f"No q points in [{qmin}, {qmax}]")
+        if dmax is None:
+            groups = [inr[[i]] for i in range(inr.size)]
         else:
-            raise ValueError(f"Unknown SAXS scalar: {kind}")
+            dq = np.pi / (dmax * oversample)
+            centers = np.arange(qmin, qmax + dq / 2, dq)
+            j = np.abs(q[inr, None] - centers[None, :]).argmin(axis=1)
+            groups = []
+            for k, c in enumerate(centers):
+                g = inr[j == k]
+                if g.size == 0:
+                    continue
+                groups.append(g if average else np.array([g[np.argmin(np.abs(q[g] - c))]]))
+        q_sel = np.array([q[g].mean() for g in groups])
+        rows = []
+        for m in self.saxs_list:
+            d = m.get_data()
+            I, e = d['I'].to_numpy(float), d['err_I'].to_numpy(float)
+            rows.append((m.seqi, m.time,
+                         np.array([I[g].mean() for g in groups]),
+                         np.array([np.sqrt(np.sum(e[g] ** 2)) / g.size for g in groups])))
+        df = pd.DataFrame(rows, columns=["frame", "time", "I", "errI"])
+        df.attrs["q"] = q_sel
+        return df
 
     def reload_saxs(self, autorg_filename=None):
         """
@@ -757,6 +810,7 @@ class CoupledMeasurement:
     def fit_gauss_peaks(self, n_peaks, wl=280, p0=None, baseline=False, fit_alignment=True,
                         fit_scale=False, shift_window=100.0, scale_tol=0.05, uv_weight=1.0,
                         scan_points=401, apply=False, sigma_bounds=None, with_tau=False,
+                        q=None, dmax='auto',
                         **ls_kwargs):
         """
         Joint fit of SAXS I0 and UV absorbance (one or many wavelengths) as a sum of
@@ -772,7 +826,7 @@ class CoupledMeasurement:
         n = n_peaks
         a = self._alignment
         scale0, shift0 = a.get("scale", 1.0), a.get("shift", 0.0)
-        blocks = self._build_blocks(wl, uv_weight)
+        blocks = self._build_blocks(q=q, wl=wl, uv_weight=uv_weight, dmax=dmax)
         theta0, (lo, hi) = self._theta_start_bounds(
             blocks, n, True, (scale0 * (1 - scale_tol), scale0 * (1 + scale_tol)),
             (shift0 - shift_window, shift0 + shift_window), sigma_bounds, with_tau)
@@ -796,11 +850,10 @@ class CoupledMeasurement:
         res = least_squares(fun, theta0[free], bounds=(lo[free], hi[free]), x_scale="jac", **ls_kwargs)
         theta = theta0.copy()
         theta[free] = res.x
-        # sort peaks by center, descending; every per-peak block gets the same order
         order = np.argsort(-theta[:n])
         theta[:n] = theta[:n][order]
         theta[n:2 * n] = theta[n:2 * n][order]
-        theta[2 * n + 2:] = theta[2 * n + 2:][order]      # empty for Gaussian: no-op
+        theta[2 * n + 2:] = theta[2 * n + 2:][order]
         c, s, scale, shift, taus = self._unpack_theta(theta, n, True)
         ev = self._eval_blocks(theta, n, blocks, True, baseline)
         saxs, uv = (self._block_report(b, G, A, n, baseline) for b, (G, A, _) in zip(blocks, ev))
@@ -808,6 +861,9 @@ class CoupledMeasurement:
         uv["wl"] = wl_arr if len(wl_arr) == len(uv["data"].columns) else np.arange(len(uv["data"].columns))
         if apply and fit_alignment:
             self._store_alignment(scale, shift, 2 * res.cost, res.success)
+        if "I0" not in saxs['amplitudes']['index']:
+            saxs['amplitudes']['index'].appens("I0")
+            saxs['amplitudes']['values'].append({} [m.get_rg
         return dict(result=res, cost=float(2 * res.cost), centers=c, sigmas=s, taus=taus,
                     scale=float(scale), shift=float(shift),
                     centers_saxs=scale * c + shift, sigmas_saxs=scale * s,
@@ -1024,7 +1080,8 @@ class CoupledMeasurement:
         return dict(I=D @ m, err_I=np.sqrt(err[:, mask] ** 2 @ m ** 2), frames=np.flatnonzero(mask),
                     mask=mask, weights=m, concentration=csel)
 
-    def plot_gauss_summary(self, fit, idxs, wls=(260, 280, 350, 420), results=None):
+    def plot_gauss_summary(self, fit, idxs, wls=(260, 280, 350, 420), results=None,
+                       guinier=None, rg_min_frac=0.1):
         import re
         import matplotlib.pyplot as plt
         from ..jocolors import tstum1, tstum7, tstum0, tstum3, tstum20, tstum14
@@ -1045,7 +1102,15 @@ class CoupledMeasurement:
             col_idxs.append(hits[0])
         yuv = np.array(fit['uv']['data']['values'])[:, col_idxs]
         norms = yuv.max(axis=0)
+        ### Make I0 and Rg axis and grey plots
         axI0.plot(t_saxs, np.array(fit['saxs']['data']['values'])[:, 0], color='0.6')
+        t_all = np.array([m.time for m in self.saxs_list])
+        axRg = axI0.twinx()
+        adf = self.load_autorg()                      # refreshed against current m.time
+        ok = np.isfinite(adf.Rg) & (adf.I0 > rg_min_frac * np.nanmax(adf.I0))
+        axRg.plot(adf.time[ok], adf.Rg[ok], '.', ms=2, color='0.3', label='autorg $R_g$')
+        axRg.set_ylabel(r'$R_g$')
+        ###  make UV grey plots
         for shift, (target, y, nrm) in enumerate(zip(targets, yuv.T, norms)):
             axU.plot(t_uv, y / nrm + shift, color='0.6')
             axU.annotate(target, xy=(t_uv.min() + 10, shift))
@@ -1066,6 +1131,15 @@ class CoupledMeasurement:
             for shift, target, nrm in zip(range(len(targets)), targets, norms):
                 peak_uv = np.array(fit['uv']['peaks'][target][f'peak_{i+1}'])
                 axU.plot(t_uv, peak_uv / nrm + shift, color=color)
+            if guinier is not None and i in guinier and np.isfinite(guinier[i]['Rg']):
+                g = guinier[i]
+                tt = t_all[results[i]['mask']] if (results and i in results) else t_saxs[[0, -1]]
+                t0, t1 = tt.min(), tt.max()
+                axRg.hlines(g['Rg'], t0, t1, color=color, linewidth=2)
+                axRg.fill_between([t0, t1], g['Rg'] - g['err_Rg'], g['Rg'] + g['err_Rg'],
+                                  color=color, alpha=0.2, linewidth=0)
+                axI0.errorbar(fit['centers_saxs'][i], g['I0'], g['err_I0'],
+                              fmt='o', mfc='none', color=color)
         axU.sharex(axI0)
         axx.set_xscale('log')
         axx.set_yscale('log')
@@ -1446,19 +1520,40 @@ class CoupledMeasurement:
         o = np.argsort(c)
         return np.array(c)[o], np.array(s)[o]
 
-    def _build_blocks(self, wl=280, uv_weight=1.0):
+    @staticmethod
+    def _noise(Y):
+        d = np.diff(Y, axis=0)
+        med = np.nanmedian(d, axis=0)
+        return 1.4826 * np.nanmedian(np.abs(d - med), axis=0) / np.sqrt(2)
+
+    def _build_blocks(self, q=None, wl=280, uv_weight=1.0, saxs_weight=1.0, q_stride=1, dmax='auto'):
         a = self._alignment
-        dfX = self.get_saxs_scalar(a["saxs_kind"], qmin=a["qmin"], qmax=a["qmax"], qstar=a["qstar"], load=True)
+        if q is None:
+            dfX = self.get_saxs_scalar(a["saxs_kind"], qmin=a["qmin"], qmax=a["qmax"],
+                                       qstar=a["qstar"], load=True)
+            yX, namesX = dfX["I0"].to_numpy(float)[:, None], ["I0"]
+        elif np.ndim(q) == 0:
+            dfX = self.get_saxs_scalar("Iq", qstar=float(q))
+            yX, namesX = dfX["I0"].to_numpy(float)[:, None], [f"I_q{q:g}"]
+        elif len(q) == 2:
+            if dmax == "auto":
+                dmax = self.estimate_dmax()
+            dfX = self.get_saxs_range(q[0], q[1], dmax=dmax, oversample=oversample, average=average)
+            yX = np.vstack(dfX["I"].to_numpy())
+            namesX = [f"I_q{qq:.4f}" for qq in dfX.attrs["q"]]
+        else:
+            raise ValueError("q must be None, a scalar, or (qmin, qmax)")
         dfUV = self.uv.get_Abs_wl(list(wl) if isinstance(wl, range) else wl)
         cols = [c for c in dfUV.columns if c.startswith("Abs")]
         tX = dfX["time"].to_numpy(float)
-        yX = dfX["I0"].to_numpy(float)[:, None]
-        tU = dfUV["time"].to_numpy(float)
-        YU = dfUV[cols].to_numpy(float)
-        sx = np.nanmax(np.abs(yX))
-        su = np.nanmax(np.abs(YU)) * np.sqrt(len(cols)) / uv_weight
-        return [dict(t=tX, Y=yX, cw=np.array([1 / sx]), affine=True, names=["I0"]),
-                dict(t=tU, Y=YU, cw=np.full(len(cols), 1 / su), affine=False, names=cols)]
+        tU, YU = dfUV["time"].to_numpy(float), dfUV[cols].to_numpy(float)
+        nX, nU = self._noise(yX), self._noise(YU)
+        nX = np.where(np.isfinite(nX) & (nX > 0), nX, np.nanmax(nX))   # guard flat channels
+        nU = np.where(np.isfinite(nU) & (nU > 0), nU, np.nanmax(nU))
+        cwX = saxs_weight / (nX * np.sqrt(len(tX) * yX.shape[1]))
+        cwU = uv_weight / (nU * np.sqrt(len(tU) * len(cols)))
+        return [dict(t=tX, Y=yX, cw=cwX, affine=True, names=namesX),
+                dict(t=tU, Y=YU, cw=cwU, affine=False, names=cols)]
 
     def _eval_blocks(self, theta, n, blocks, fit_scale=True, baseline=False):
         c, s, scale, shift, taus = self._unpack_theta(theta, n, fit_scale)
