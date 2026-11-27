@@ -71,6 +71,7 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
     subfolders: bool=True
 
     average_df: pd.DataFrame=None
+    time0: float=0.0
 
     def __post_init__(self):
         print('replica from:')
@@ -174,14 +175,14 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
             )
         return selected
 
-    def get_rg_dataframe(self, qmax=0.08):
+    def get_rg_dataframe(self, time0=None, qmax=0.08):
         rows = []
         for irep, gs in enumerate(self.gss):
             outdict = gs.plot_spectra(plot=False,
                                       get_Rg=True)
             # print('outdict', outdict)
-            for ispec, (df, chi2, Rg, err_Rg) in enumerate(
-                    zip(outdict["df"], outdict["chi2"],
+            for ispec, (time, df, chi2, Rg, err_Rg) in enumerate(
+                    zip(outdict["time"], outdict["df"], outdict["chi2"],
                         outdict["Rg"], outdict["err_Rg"])):
                 if ispec < gs.min_index:
                     continue
@@ -190,6 +191,7 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                     rows.append({
                         "replica": irep,
                         "spectrum": ispec,
+                        "time": time,
                         "Rg": rgdict['Rg'],
                         "err_Rg": rgdict['err_Rg'],
                         "chi2": chi2,
@@ -199,7 +201,12 @@ class REPLICA_SWAXS(GROMACS_SWAXS):
                     print(e)
                     print('get_rg failed')
                     print('df', df)
-        return pd.DataFrame(rows)
+        out =  pd.DataFrame(rows)
+        if time0 is None:
+            out = out[out.time>self.time0]
+        else:
+            out = out[out.time>time0]
+        return out
 
     def plot_rg_colored_spectra(
         self,

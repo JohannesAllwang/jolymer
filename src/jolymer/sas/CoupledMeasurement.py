@@ -1103,7 +1103,7 @@ class CoupledMeasurement:
                        guinier=None, rg_min_frac=0.1):
         import re
         import matplotlib.pyplot as plt
-        from ..jocolors import tstum1, tstum7, tstum0, tstum3, tstum20, tstum14
+        from ..jocolors import tstum1, tstum7, tstum0, tstum3, tstum4, tstum20, tstum14
         colors = [tstum1, tstum7, tstum0, tstum3, tstum20, tstum14]
         results = results or {}
         if self._q is None:
@@ -1122,13 +1122,22 @@ class CoupledMeasurement:
         yuv = np.array(fit['uv']['data']['values'])[:, col_idxs]
         norms = yuv.max(axis=0)
         ### Make I0 and Rg axis and grey plots
-        axI0.plot(t_saxs, np.array(fit['saxs']['data']['values'])[:, 0], color='0.6')
-        t_all = np.array([m.time for m in self.saxs_list])
-        axRg = axI0.twinx()
         adf = self.load_autorg()                      # refreshed against current m.time
+        t_all = np.array([m.time for m in self.saxs_list])
         ok = np.isfinite(adf.Rg) & (adf.I0 > rg_min_frac * np.nanmax(adf.I0))
-        axRg.plot(adf.time[ok], adf.Rg[ok], '.', ms=2, color='0.3', label='autorg $R_g$')
+        print(adf)
+        axI0.plot(adf.time[ok], adf.I0[ok], 'o', ms=2, color='0.6', label="I0")
+        axRg = axI0.twinx()
+        axRg.plot(adf.time[ok], adf.Rg[ok], '.', ms=2, color=tstum3, label='autorg $R_g$')
         axRg.set_ylabel(r'$R_g$')
+        ch0 = fit['saxs']['data']['columns'][0]      # "I0" or the lowest-q channel
+        seqis = np.array([m.seqi for m in self.saxs_list])
+        def peak_curve(i):
+            v = np.array(fit['saxs']['peaks'][ch0][f'peak_{i}'])
+            I0 = guinier[i]['I0'] if (guinier is not None and i in guinier) else 0.0
+            if I0 > 0 and v.max() > 0:
+                return v * (I0 / v.max()), True     # peak height = Guinier I0
+            return v, False                         # fallback: first-channel curve as is
         ###  make UV grey plots
         for shift, (target, y, nrm) in enumerate(zip(targets, yuv.T, norms)):
             axU.plot(t_uv, y / nrm + shift, color='0.6')
@@ -1139,27 +1148,27 @@ class CoupledMeasurement:
         for i, color in zip(idxs, colors):
             y, e = (results[i]['I'], results[i]['err_I']) if i in results else (self._P[:, i], None)
             nrm = np.nanmax(y)
-            axx.errorbar(self._q, y / nrm, None if e is None else e / nrm, color=color, label=f'P{i}', linewidth=1, elinewidth=0.5)
+            axx.errorbar(self._q, y / nrm, None if e is None else e / nrm, color=color,
+                         label=f'P{i}', linewidth=1, elinewidth=0.5)
             axu.plot(xs, amp_vals[:, i] / amp_vals[:, i].max(), label=f'P{i}', color=color)
-            for shift, target, nrm in zip(range(len(targets)), targets, norms):
-                peak_uv = np.array(fit['uv']['peaks'][target][f'peak_{i+1}'])
-                axU.plot(t_uv, peak_uv / nrm + shift, color=color)
+            for shift, target, nrm_uv in zip(range(len(targets)), targets, norms):
+                peak_uv = np.array(fit['uv']['peaks'][target][f'peak_{i}'])
+                axU.plot(t_uv, peak_uv / nrm_uv + shift, color=color)
+            # component I0 elution curve (always drawn)
+            peak_I0, scaled = peak_curve(i)
+            axI0.plot(t_saxs, peak_I0, color=color, ls='-' if scaled else '--')
+            if i in results:
+                used = seqis[results[i]['mask']]
+                sel = np.isin(fit['ms']['sequis'], used)
+                axI0.vlines(t_saxs[sel], 0, peak_I0[sel], color=color, linewidth=0.2)
+            # component Rg (only if the Guinier fit worked)
             if guinier is not None and i in guinier and np.isfinite(guinier[i]['Rg']):
                 g = guinier[i]
-                tt = t_all[results[i]['mask']] if (results and i in results) else t_saxs[[0, -1]]
+                tt = t_all[results[i]['mask']] if i in results else t_saxs[[0, -1]]
                 t0, t1 = tt.min(), tt.max()
                 axRg.hlines(g['Rg'], t0, t1, color=color, linewidth=2)
                 axRg.fill_between([t0, t1], g['Rg'] - g['err_Rg'], g['Rg'] + g['err_Rg'],
                                   color=color, alpha=0.2, linewidth=0)
-                axI0.errorbar(fit['centers_saxs'][i], g['I0'], g['err_I0'],
-                              fmt='o', mfc='none', color=color)
-            else:
-                peak_I0 = np.array(fit['saxs']['peaks']['I0'][f'peak_{i+1}'])
-                axI0.plot(t_saxs, peak_I0, color=color)
-                if i in results:
-                    used = np.array([m.seqi for m in self.saxs_list])[results[i]['mask']]
-                    sel = np.isin(fit['ms']['sequis'], used)
-                    axI0.vlines(t_saxs[sel], 0, peak_I0[sel], color=color, linewidth=0.2)
         axU.sharex(axI0)
         axx.set_xscale('log')
         axx.set_yscale('log')
@@ -1170,6 +1179,7 @@ class CoupledMeasurement:
         axI0.set_xlabel('Time (s)')
         axI0.set_ylabel(r'$I_0$ (a.u.)')
         axI0.set_title('SAXS elution profile')
+        axRg.set_ylim(0,15)
         axu.set_xlabel('Wavelength (nm)')
         axu.set_ylabel('Normalized absorbance')
         axu.set_ylim(0, 1.01)
